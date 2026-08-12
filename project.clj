@@ -9,6 +9,7 @@
                  [jepsen "0.3.13"]
                  [com.yugabyte/cassaforte "3.0.0-alpha2-yb-1"
                   :exclusions [org.clojure/tools.reader]]
+                 [io.jepsen/sql "0.1.0"]
                  [org.clojure/java.jdbc "0.7.12"]
                  [org.postgresql/postgresql "42.7.13"]
                  [org.slf4j/jcl-over-slf4j "2.0.18"]
