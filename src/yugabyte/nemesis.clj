@@ -2,6 +2,7 @@
   (:require [clojure.tools.logging :refer :all]
             [clojure.pprint :refer [pprint]]
             [jepsen.control :as c]
+            [jepsen.control.util :as cu]
             [jepsen.generator :as gen]
             [jepsen.nemesis :as nemesis]
             [jepsen.util :as util :refer [meh timeout]]
@@ -20,28 +21,26 @@
       (let [nodes (:nodes test)
             nodes (case (:f op)
                     (:resume-tserver :start-tserver) nodes
-                    (:resume-master :start-master)  (auto/master-nodes test)
+                    (:resume-master :start-master)  nodes
 
-                    (:stop-tserver :kill-tserver :pause-tserver)
+                    (:kill-tserver :pause-tserver)
                     (util/random-nonempty-subset nodes)
 
-                    (:stop-master :kill-master :pause-master)
-                    (util/random-nonempty-subset (auto/master-nodes test)))
+                    (:kill-master :pause-master)
+                    (util/random-nonempty-subset nodes))
             db (:db test)]
         (assoc op :value
                (c/on-nodes test nodes
                  (fn [test node]
                    (case (:f op)
-                     :start-master  (auto/start-master!  db test node)
-                     :start-tserver (auto/start-tserver! db test node)
-                     :stop-master   (auto/stop-master!   db)
-                     :stop-tserver  (auto/stop-tserver!  db)
-                     :kill-master   (auto/kill-master!   db)
-                     :kill-tserver  (auto/kill-tserver!  db)
-                     :pause-master    (auto/signal! "yb-master"   :STOP)
-                     :pause-tserver   (auto/signal! "yb-tserver"  :STOP)
-                     :resume-master   (auto/signal! "yb-master"   :CONT)
-                     :resume-tserver  (auto/signal! "yb-tserver"  :CONT)))))))
+                     :start-master   (auto/start-master!  db test node)
+                     :start-tserver  (auto/start-tserver! db test node)
+                     :kill-master    (auto/kill-master!   db)
+                     :kill-tserver   (auto/kill-tserver!  db)
+                     :pause-master   (cu/kill-bin! :STOP auto/master-bin)
+                     :pause-tserver  (cu/kill-bin! :STOP auto/tserver-bin)
+                     :resume-master  (cu/kill-bin! :CONT auto/master-bin)
+                     :resume-tserver (cu/kill-bin! :CONT auto/tserver-bin)))))))
 
     (teardown! [this test])))
 
@@ -71,7 +70,6 @@
   []
   (nemesis/compose
     {#{:start-master  :start-tserver
-       :stop-master   :stop-tserver
        :kill-master   :kill-tserver
        :pause-master  :pause-tserver
        :resume-master :resume-tserver} (process-nemesis)
@@ -161,11 +159,9 @@
 
     ; Mix together our different types of process crashes, partitions, and
     ; clock skews.
-    (->> [(o {:kill-tserver (op :kill-tserver)
-              :stop-tserver (op :stop-tserver)}
+    (->> [(o {:kill-tserver (op :kill-tserver)}
              (op :start-tserver))
-          (o {:kill-master (op :kill-master)
-              :stop-master (op :stop-master)}
+          (o {:kill-master (op :kill-master)}
              (op :start-master))
           (o {:pause-tserver (op :pause-tserver)}
              (op :resume-tserver))
@@ -191,11 +187,11 @@
   operations."
   [n]
   (->> (cond-> []
-         (:clock-skew n)                          (conj :reset-clock)
-         (:pause-master n)                        (conj :resume-master)
-         (:pause-tserver n)                       (conj :resume-tserver)
-         (or (:kill-tserver n) (:stop-tserver n)) (conj :start-tserver)
-         (or (:kill-master n)  (:stop-master n))  (conj :start-master)
+         (:clock-skew    n) (conj :reset-clock)
+         (:pause-master  n) (conj :resume-master)
+         (:pause-tserver n) (conj :resume-tserver)
+         (:kill-tserver  n) (conj :start-tserver)
+         (:kill-master   n) (conj :start-master)
 
          (some n [:partition-one :partition-half :partition-ring])
          (conj :stop-partition))
@@ -221,8 +217,6 @@
   [n]
   (cond-> n
     (:kill n) (assoc :kill-tserver true
-                     :kill-master true)
-    (:stop n) (assoc :stop-tserver true
                      :kill-master true)
     (:pause n) (assoc :pause-master true
                       :pause-tserver true)

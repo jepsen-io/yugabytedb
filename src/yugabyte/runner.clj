@@ -41,15 +41,7 @@
   "Options for single or multiple tests."
   (cli/merge-opt-specs
     jepsen.sql/cli-opts
-    [["-o" "--os NAME" "Operating system: either centos or debian."
-      :default :centos
-      :parse-fn keyword
-      :validate [#{:centos :debian} "One of `centos` or `debian`"]]
-
-     [nil "--experimental-tuning-flags" "Enable some experimental tuning flags which are supposed to help YB recover faster"
-      :default false]
-
-     [nil "--final-recovery-time SECONDS" "How long to wait for the cluster to stabilize at the end of a test"
+    [[nil "--final-recovery-time SECONDS" "How long to wait for the cluster to stabilize at the end of a test"
       :default 30
       :parse-fn parse-long
       :validate [(complement neg?) "Must be a non-negative number"]]
@@ -89,7 +81,7 @@
       :default false]
 
      [nil "--version VERSION" "What version of Yugabyte to install"
-      :default "1.3.1.0"]
+      :default "2026.1.0.0-b118"]
 
      [nil "--table-count INT" "Number of tables to spread rows across."
       :default 5]
@@ -99,8 +91,6 @@
 
      [nil "--trace-cql" "If provided, logs CQL queries"
       :default false]]))
-
-(pprint (sort (map second cli-opts)))
 
 (def test-all-opts
   "CLI options for testing everything."

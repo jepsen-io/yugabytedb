@@ -133,9 +133,6 @@
     :pause-master
     :pause-tserver
     :pause
-    :stop
-    :stop-master
-    :stop-tserver
     :clock-skew})
 
 (def all-nemeses
@@ -215,9 +212,7 @@
                                        (map name)
                                        sort
                                        (str/join ",")))))
-    :os (case (:os opts)
-          :centos centos/os
-          :debian debian/os)
+    :os debian/os
     :db (auto/->YugaByteDB)))
 
 (defn test-2
@@ -240,11 +235,11 @@
                    gen)
         perf     (checker/perf
                    {:nemeses #{{:name       "kill master"
-                                :start      #{:kill-master :stop-master}
+                                :start      #{:kill-master}
                                 :stop       #{:start-master}
                                 :fill-color "#E9A4A0"}
                                {:name       "kill tserver"
-                                :start      #{:kill-tserver :stop-tserver}
+                                :start      #{:kill-tserver}
                                 :stop       #{:start-tserver}
                                 :fill-color "#E9C3A0"}
                                {:name       "pause master"

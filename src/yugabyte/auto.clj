@@ -5,45 +5,55 @@
             [clojure.pprint :refer [pprint]]
             [clj-http.client :as http]
             [dom-top.core :as dt]
-            [jepsen.control :as c]
-            [jepsen.db :as db]
-            [jepsen.util :as util :refer [meh timeout]]
+            [jepsen [control :as c]
+                    [core :as jepsen]
+                    [db :as db]
+                    [util :as util :refer [meh timeout]]]
             [jepsen.control.net :as cn]
             [jepsen.control.util :as cu]
             [jepsen.os.debian :as debian]
-            [jepsen.os.centos :as centos]
             [yugabyte.ycql.client :as ycql.client]
             [yugabyte.ysql.client :as ysql.client]
             [slingshot.slingshot :refer [try+ throw+]])
-  (:import jepsen.os.debian.Debian
-           jepsen.os.centos.CentOS))
+  (:import jepsen.os.debian.Debian))
 
 (def dir
   "Where we unpack the Yugabyte package"
-  "/home/yugabyte")
+  "/opt/yugabyte")
 
 (def master-log-dir  (str dir "/master/logs"))
 (def tserver-log-dir (str dir "/tserver/logs"))
 (def installed-url-file (str dir "/installed-url"))
+(def yugabyted-bin (str dir "/bin/yugabyted"))
+(def ui-bin       (str dir "/bin/yugabyted-ui"))
+(def master-bin   (str dir "/bin/yb-master"))
+(def tserver-bin  (str dir "/bin/yb-tserver"))
+
+(def data-dir (str dir "/data"))
+(def log-dir  (str dir "/logs"))
+
+; Community-edition-specific files
+
+(def ce-data-dir data-dir)
+(def ce-master-bin      (str dir "/bin/yb-master"))
+(def ce-master-log-dir  (str ce-data-dir "/yb-data/master/logs"))
+(def ce-master-logfile  (str ce-master-log-dir "/stdout"))
+(def ce-master-pidfile  (str dir "/master.pid"))
+
+(def ce-tserver-bin     (str dir "/bin/yb-tserver"))
+(def ce-tserver-log-dir (str ce-data-dir "/yb-data/tserver/logs"))
+(def ce-tserver-logfile (str ce-tserver-log-dir "/stdout"))
+(def ce-tserver-pidfile (str dir "/tserver.pid"))
+
+(def master-port 7100)
+(def tserver-port 9100)
+(def ysql-port 5433)
+(def ycql-port 9042)
 
 (def max-bump-time-ops-per-test
   "Upper bound on number of bump time ops per test, needed to estimate max
   clock skew between servers"
   100)
-
-; OS-level polymorphic functions for Yugabyte
-(defprotocol OS
-  (install-python! [os]))
-
-(extend-protocol OS
-  Debian
-  (install-python! [os]
-    (debian/install [:python2.7]))
-
-  CentOS
-  (install-python! [os]
-    ; TODO: figure out the yum invocation we need here
-    ))
 
 (defprotocol Auto
   (install!       [db test])
@@ -54,38 +64,18 @@
   (stop-tserver!  [db])
   (wipe!          [db]))
 
-(defn master-nodes
-  "Given a test, returns the nodes we run masters on."
-  [test]
-  (let [nodes (take (:replication-factor test)
-                    (:nodes test))]
-    (assert (= (count nodes) (:replication-factor test))
-            (str "We need at least "
-                 (:replication-factor test)
-                 " nodes as masters, but test only has nodes: "
-                 (pr-str (:nodes test))))
-    nodes))
-
-(defn master-node?
-  "Is this node a master?"
-  [test node]
-  (some #{node} (master-nodes test)))
-
-(defn master-addresses
-  "Given a test, returns a list of master addresses, like \"n1:7100,n2:7100,...
-  \""
-  [test]
-  (assert (coll? (:nodes test)))
-  (->> (master-nodes test)
-       (take (:replication-factor test))
-       (map #(str % ":7100"))
-       (str/join ",")))
+(defn yugabyted!
+  "Runs a yugabyted command on the current node."
+  [& args]
+  (c/su
+    (c/cd dir
+          (apply c/exec yugabyted-bin args))))
 
 (defn yb-admin
   "Runs a yb-admin command on a node. Args are passed to yb-admin."
   [test & args]
   (apply c/exec (str dir "/bin/yb-admin")
-         :--master_addresses (master-addresses test)
+         ;:--master_addresses (master-addresses test)
          args))
 
 (defn list-all-masters
@@ -112,120 +102,31 @@
                    next
                    (zipmap [:uuid :address]))))))
 
-(defn await-masters
-  "Waits until all masters for a test are online, according to this node."
-  [test]
-  (dt/with-retry [tries 20]
-    (when (< 0 tries 20)
-      (info "Waiting for masters to come online")
-      (Thread/sleep 1000))
-
-    (when (zero? tries)
-      (throw (RuntimeException. "Giving up waiting for masters.")))
-
-    (when-not (= (count (master-addresses test))
-                 (->> (list-all-masters test)
-                      (filter (comp #{"ALIVE"} :state))
-                      count))
-      (retry (dec tries)))
-
-    :ready
-
-    (catch RuntimeException e
-      (condp re-find (.getMessage e)
-        #"Could not locate the leader master"     (retry (dec tries))
-        #"Timed out"                              (retry (dec tries))
-        #"Leader not yet ready to serve requests" (retry (dec tries))
-        (throw e)))))
-
-(defn await-tservers
-  "Waits until all tservers for a test are online, according to this node."
-  [test]
-  (dt/with-retry [tries 60]
-    (when (< 0 tries)
-      (info "Waiting for tservers to come online")
-      (Thread/sleep 1000))
-
-    (when (zero? tries)
-      (throw (RuntimeException. "Giving up waiting for tservers.")))
-
-    (when-not (= (count (:nodes test))
-                 (->> (list-all-tservers test)
-                      (filter (comp #{"ALIVE"} :state))
-                      count))
-      (retry (dec tries)))
-
-    :ready
-
-    (catch RuntimeException e
-      (condp re-find (.getMessage e)
-        #"Leader not yet ready to serve requests"   (retry (dec tries))
-        #"This leader has not yet acquired a lease" (retry (dec tries))
-        #"Could not locate the leader master"       (retry (dec tries))
-        #"Leader not yet replicated NoOp"           (retry (dec tries))
-        #"Not the leader"                           (retry (dec tries))
-        (throw e)))))
-
-(defn check-ysql
-  "Connects to the YSQL interface and immediately disconnects. YB just...
-  doesn't accept connections sometimes, so we use this to give up on the setup
-  process if the cluster looks broken. Hack hack hack."
-  [node]
-  (try+
-    (-> node
-        ysql.client/open-conn
-        ysql.client/close-conn)
-    (catch [:type :connection-timed-out] e
-      (throw+ {:type :jepsen.db/setup-failed}))))
-
-(defn start! [db test node]
-  "Start both master and tserver. Only starts master if this node is a master
-  node. Waits for masters and tservers."
-  (info "Starting master and tserver for" (name (:api test)) "API")
-  (when (master-node? test node)
-    (start-master! db test node)
-    (await-masters test))
-
-  (start-tserver! db test node)
-  (await-tservers test)
-
-  (if (= (:api test) :ycql)
-    (yugabyte.ycql.client/await-setup node)
-    ()) ; So far it looks like we don't need that for YSQL?
-  :started)
-
-(defn stop! [db test node]
-  "Stop both master and tserver. Only stops master if this node needs to."
-  (stop-tserver! db)
-  (when (master-node? test node)
-    (stop-master! db))
-  :stopped)
-
-(defn signal!
-  "Sends a signal to a named process by signal number or name."
-  [process-name signal]
-  (meh (c/su (c/exec :pkill :--signal signal process-name)))
-  :signaled)
-
-(defn kill!
-  "Kill a process forcibly."
-  [process]
-  (signal! process 9)
-  (c/exec (c/lit (str "! ps -ce | grep " process)))
-  (info process "killed")
-  :killed)
-
 (defn kill-tserver!
   "Kills the tserver"
-  [db]
-  (kill! "yb-tserver")
-  (stop-tserver! db))
+  []
+  (info "Killing tserver")
+  (cu/kill-bin! tserver-bin))
 
 (defn kill-master!
   "Kills the master"
-  [db]
-  (kill! "yb-master")
-  (stop-master! db))
+  []
+  (info "Killing master")
+  (cu/kill-bin! master-bin))
+
+(defn kill-ui!
+  "Kills the UI process"
+  []
+  (info "Killing UI")
+  (cu/kill-bin! ui-bin))
+
+(defn kill-yugabyted!
+  "Kills the yugabyted supervisor"
+  []
+  (info "Killing yugabyted")
+  ;(cu/grepkill! (str "python3 " yugabyted-bin)))
+  ; Ugh, fine, it's the only python process running I guess
+  (cu/kill-bin! "/usr/bin/python3"))
 
 (defn version
   "Returns a map of version information by calling `bin/yb-master --version`,
@@ -247,39 +148,31 @@
       )))
 
 (defn get-installed-url
-      "Returns URL from which YugaByte was installed on node"
-      []
-      (try
-        (c/exec :cat installed-url-file)
-        (catch RuntimeException e
-          ; Probably not installed
-          )))
+  "Returns URL from which YugaByte was installed on node"
+  []
+  (try
+    (c/exec :cat installed-url-file)
+    (catch RuntimeException e
+      ; Probably not installed
+      )))
 
 (defn get-download-url
   "Returns URL to tarball for specific released version"
   [version]
-  (str "https://downloads.yugabyte.com/yugabyte-" version "-linux.tar.gz"))
+  (let [[m version-without-b]
+        (re-find #"^(.+)(-b\d+?)$" version)]
+    (str "https://software.yugabyte.com/releases/" version-without-b
+         "/yugabyte-" version "-linux-x86_64.tar.gz")))
 
 (defn log-files-without-symlinks
   "Takes a directory, and returns a list of logfiles in that direcory, skipping
   the symlinks which end in .INFO, .WARNING, etc."
   [dir]
   (remove (partial re-find #"\.(INFO|WARNING|ERROR)$")
-          (try (cu/ls-full dir)
+          (try (cu/ls dir {:full-path? true
+                           :recursive? true
+                           :types [:file]})
                (catch RuntimeException e nil))))
-
-; Community-edition-specific files
-(def ce-data-dir        (str dir "/data"))
-
-(def ce-master-bin      (str dir "/bin/yb-master"))
-(def ce-master-log-dir  (str ce-data-dir "/yb-data/master/logs"))
-(def ce-master-logfile  (str ce-master-log-dir "/stdout"))
-(def ce-master-pidfile  (str dir "/master.pid"))
-
-(def ce-tserver-bin     (str dir "/bin/yb-tserver"))
-(def ce-tserver-log-dir (str ce-data-dir "/yb-data/tserver/logs"))
-(def ce-tserver-logfile (str ce-tserver-log-dir "/stdout"))
-(def ce-tserver-pidfile (str dir "/tserver.pid"))
 
 (defn ce-shared-opts
   "Shared options for both master and tserver"
@@ -314,21 +207,22 @@
      :--pgsql_proxy_bind_address (cn/ip node)]
     []))
 
-(def experimental-tuning-flags
-  ; Speed up recovery from partitions and crashes. Right now it looks like
-  ; these actually make the cluster slower to, or unable to, recover.
-  [:--client_read_write_timeout_ms                2000
-   :--leader_failure_max_missed_heartbeat_periods 2
-   :--leader_failure_exp_backoff_max_delta_ms     5000
-   :--rpc_default_keepalive_time_ms               5000
-   :--rpc_connection_timeout_ms                   1500
-   ])
-
 (def limits-conf
   "Ulimits, in the format for /etc/security/limits.conf."
   "
 * hard nofile 1048576
 * soft nofile 1048576")
+
+(defn start-opts
+  "Common options we pass on `yugabyted start`."
+  [test node]
+  ["--base_dir"          dir
+   ; Let's say each node is its own region and zone
+   "--cloud_location"    (str "jepsen." node "." node)
+   "--advertise_address" (cn/local-ip)
+   "--fault_tolerance"   "zone"
+   "--tserver_flags"     "enable_ysql_conn_mgr=true"
+   ])
 
 (defrecord YugaByteDB
   []
@@ -338,21 +232,18 @@
       (c/cd dir
             ; Post-install takes forever, so let's try and skip this on
             ; subsequent runs
-            (let [url           (or (:url test) (get-download-url (:version test)))
+            (let [url           (or (:url test)
+                                    (get-download-url (:version test)))
                   installed-url (get-installed-url)]
               (when-not (= url installed-url)
-                (info "Replacing version" installed-url "with" url)
-                (install-python! (:os test))
-                (assert (re-find #"Python 2\.7"
-                                 (c/exec :python :--version (c/lit "2>&1"))))
+                (info "Old version" installed-url "should be replaced by" url)
+                (debian/install ["python3"])
 
                 (info "Installing tarball")
                 (cu/install-archive! url dir)
-                (c/su (info "Post-install script")
-                      (c/exec "./bin/post_install.sh")
 
-                      (c/exec :echo url :>> installed-url-file)
-                      (info "Done with setup")))))))
+                (cu/write-file! url installed-url-file)
+                (info "Done with setup"))))))
 
   (configure! [db test node]
     ; YB will explode after creating just a handful of tables if we don't raise
@@ -363,50 +254,6 @@
     ; some point.
     (c/su (c/exec :echo limits-conf :> "/etc/security/limits.d/jepsen.conf")))
 
-  (start-master! [db test node]
-    (c/su (c/exec :mkdir :-p ce-master-log-dir)
-          (cu/start-daemon!
-            {:logfile ce-master-logfile
-             :pidfile ce-master-pidfile
-             :chdir   dir}
-            ce-master-bin
-            (ce-shared-opts node)
-            (when (:experimental-tuning-flags test)
-              experimental-tuning-flags)
-            :--master_addresses (master-addresses test)
-            :--replication_factor (:replication-factor test)
-            (master-api-opts (:api test) node)
-            )))
-
-  (start-tserver! [db test node]
-    (c/su (info "ulimit\n" (c/exec :ulimit :-a))
-          (c/exec :mkdir :-p ce-tserver-log-dir)
-          (cu/start-daemon!
-            {:logfile ce-tserver-logfile
-             :pidfile ce-tserver-pidfile
-             :chdir   dir}
-            ce-tserver-bin
-            (ce-shared-opts node)
-            (when (:experimental-tuning-flags test)
-              experimental-tuning-flags)
-            :--tserver_master_addrs (master-addresses test)
-            ; Tracing
-            :--enable_tracing
-            :--rpc_slow_query_threshold_ms 1000
-            :--load_balancer_max_concurrent_adds 10
-            (tserver-api-opts (:api test) node)
-
-            ; Heartbeats
-            ;:--heartbeat_interval_ms 100
-            ;:--heartbeat_rpc_timeout_ms 1500
-            ;:--retryable_rpc_single_call_timeout_ms 2000
-            ;:--rpc_connection_timeout_ms 1500
-            ;:--leader_failure_exp_backoff_max_delta_ms 1000
-            ;:--leader_failure_max_missed_heartbeat_period 3
-            ;:--consensus_rpc_timeout_ms 300
-            ;:--client_read_write_timeout_ms 6000
-            )))
-
   (stop-master! [db]
     (c/su (cu/stop-daemon! ce-master-bin ce-master-pidfile)))
 
@@ -415,28 +262,65 @@
     (c/su (cu/grepkill! "postgres")))
 
   (wipe! [db]
-    (c/su (c/exec :rm :-rf ce-data-dir)))
+    (c/su (c/exec :rm :-rf
+                  data-dir
+                  log-dir)))
 
   db/DB
   (setup! [db test node]
     (install! db test)
     (configure! db test node)
-    (start! db test node)
-    (check-ysql node))
+    (let [ip      (cn/local-ip)
+          primary (jepsen/primary test)]
+      ; Start one node
+      (when (= node primary)
+        (yugabyted! "start"
+                    (start-opts test node))
+        (cu/await-tcp-port ip master-port {})
+        (cu/await-tcp-port ip tserver-port {})
+        (info "First node started"))
+
+      (jepsen/synchronize test)
+
+      ; Join other nodes
+      (when (not= node primary)
+        ; You can't join more than a couple nodes concurrently or YB will give
+        ; up, complaining that it ran out of retries after too many "Leader
+        ; is not ready for Config Change" errors. <sigh>
+        (locking db
+          (yugabyted! "start"
+                      (start-opts test node)
+                      (str "--join=" (cn/ip primary)))
+          ; Wait for client ports
+          (cu/await-tcp-port ip ycql-port {})
+          (cu/await-tcp-port ip ysql-port {})
+          (info "Started")))))
 
   (teardown! [db test node]
-    (stop! db test node)
+    (db/kill! db test node)
     (wipe! db))
 
   db/Primary
-  (setup-primary! [this test node]
-    "Executed once on a first node in list (i.e. n1 by default) after per-node setup is done"
-    ; NOOP placeholder, can be used to initialize cluster for different APIs
-    )
+  (setup-primary! [this test node])
+  (primaries [this test]
+    ; TODO: find Raft leaders
+    [])
+
+  db/Process
+  (kill! [this test node]
+    (kill-yugabyted!)
+    (dt/disorderly
+      (kill-tserver!)
+      (kill-master!)
+      (kill-ui!)))
+
+  (start! [this test node]
+    (yugabyted! "start" (start-opts test node)))
 
   db/LogFiles
   (log-files [_ _ _]
-    (concat [ce-master-logfile
+    (concat (log-files-without-symlinks log-dir)
+            [ce-master-logfile
              ce-tserver-logfile]
             (log-files-without-symlinks ce-master-log-dir)
             (log-files-without-symlinks ce-tserver-log-dir))))
