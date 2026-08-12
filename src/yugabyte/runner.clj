@@ -65,7 +65,7 @@
                       (.toLowerCase (cli/one-of core/nemesis-specs))
                       ". Or, you can use 'none' to indicate no failures.")]]
 
-     [nil "--nemesis-interval SECONDS"
+     [nil "--nemesis-interval SECS"
       "Roughly how long to wait between nemesis operations. Default: 10s."
       :parse-fn parse-long
       :assoc-fn (fn [m k v] (update m :nemesis assoc :interval v))
@@ -99,6 +99,8 @@
 
      [nil "--trace-cql" "If provided, logs CQL queries"
       :default false]]))
+
+(pprint (sort (map second cli-opts)))
 
 (def test-all-opts
   "CLI options for testing everything."

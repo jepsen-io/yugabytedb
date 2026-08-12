@@ -133,11 +133,6 @@
                    :strobe         :strobe-clock
                    :bump           :bump-clock})))
 
-(defn flip-flop
-  "Switches between ops from two generators: a, b, a, b, ..."
-  [a b]
-  (gen/seq (cycle [a b])))
-
 (defn opt-mix
   "Given a nemesis map n, and a map of options to generators to use if that
   option is present in n, constructs a mix of generators for those options. If
@@ -162,7 +157,7 @@
             ; We return nil when mix does to avoid generating flip flops when
             ; *no* options are present in the nemesis opts.
             (when-let [mix (opt-mix n possible-gens)]
-              (flip-flop mix recovery)))]
+              (gen/flip-flop mix recovery)))]
 
     ; Mix together our different types of process crashes, partitions, and
     ; clock skews.
@@ -187,7 +182,7 @@
          ; Introduce either random or fixed delays between ops
          ((case (:schedule n)
             (nil :random)    gen/stagger
-            :fixed           gen/delay-til)
+            :fixed           gen/delay)
           (:interval n)))))
 
 (defn final-generator
@@ -204,8 +199,7 @@
 
          (some n [:partition-one :partition-half :partition-ring])
          (conj :stop-partition))
-       (map op)
-       gen/seq))
+       (map op)))
 
 (defn full-generator
   "Takes a nemesis options map `n`. If `n` has a :long-recovery option, builds
@@ -217,9 +211,9 @@
     (let [mix     #(gen/time-limit 120 (mixed-generator n))
           recover #(gen/phases (final-generator n)
                                (gen/sleep 60))]
-      (gen/seq-all (interleave (repeatedly mix)
-                               (repeatedly recover))))
-    (mixed-generator n)))
+      (interleave (repeatedly mix)
+                  (repeatedly recover))))
+    (mixed-generator n))
 
 (defn expand-options
   "We support shorthand options in nemesis maps, like :kill, which expands to
