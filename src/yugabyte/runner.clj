@@ -10,8 +10,6 @@
             [yugabyte.core :as core]
             [yugabyte.nemesis :as nemesis]))
 
-(defn parse-long [x] (Long/parseLong x))
-
 (defn parse-nemesis-spec
   "Parses a comma-separated string of nemesis types, and turns it into an
   option map like {:kill-alpha? true ...}"
