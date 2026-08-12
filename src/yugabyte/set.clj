@@ -3,8 +3,7 @@
   (:require [clojure.pprint :refer [pprint]]
             [clojure.tools.logging :refer [info]]
             [jepsen.generator :as gen]
-            [jepsen.checker :as checker]
-            [yugabyte.generator :as ygen]))
+            [jepsen.checker :as checker]))
 
 (defn adds
   []
@@ -20,6 +19,5 @@
   [opts]
   {:generator (->> (gen/reserve (/ (:concurrency opts) 2) (adds)
                                 (reads))
-                   (gen/stagger 1/10)
-                   (ygen/with-op-index))
+                   (gen/stagger 1/10))
    :checker   (checker/set-full)})

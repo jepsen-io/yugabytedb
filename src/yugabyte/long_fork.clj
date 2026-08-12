@@ -4,9 +4,8 @@
   (:refer-clojure :exclude [test])
   (:require [clojure [pprint :refer [pprint]]]
             [clojure.tools.logging :refer [info]]
-            [jepsen.tests.long-fork :as lf]
-            [yugabyte.generator :as ygen]))
+            [jepsen.tests.long-fork :as lf]))
 
 (defn workload
   [opts]
-  (ygen/workload-with-op-index (lf/workload 3)))
+  (lf/workload 3))

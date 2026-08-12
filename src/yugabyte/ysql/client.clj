@@ -45,7 +45,7 @@
   [op sql]
   (if (sequential? sql)
     (concat [(append-op-index op (first sql))] (rest sql))
-    (str sql " /* :op-index " (:op-index op) " */ ")))
+    (str sql " /* :op-index " (:index op) " */ ")))
 
 (defn query
   "Like jdbc query, but includes a default timeout in ms.
