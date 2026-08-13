@@ -71,12 +71,21 @@
     (c/cd dir
           (apply c/exec yugabyted-bin args))))
 
+(defn master-addresses
+  "Returns the comma-separated list of all master addresses for a test."
+  [test]
+  (->> (:nodes test)
+       (map (fn [node]
+              (str node ":" master-port)))
+       (str/join ",")))
+
 (defn yb-admin
   "Runs a yb-admin command on a node. Args are passed to yb-admin."
   [test & args]
-  (apply c/exec (str dir "/bin/yb-admin")
-         ;:--master_addresses (master-addresses test)
-         args))
+  (c/su
+    (apply c/exec (str dir "/bin/yb-admin")
+           :--master_addresses (master-addresses test)
+           args)))
 
 (defn list-all-masters
   "Asks a node to list all the masters it knows about."
@@ -101,6 +110,19 @@
                    (re-find #"(\w+)\s+([^\s]+)")
                    next
                    (zipmap [:uuid :address]))))))
+
+(defn await-n-masters
+  "Waits until at least n masters are known"
+  [test n]
+  (util/await-fn
+    (fn []
+      (let [masters (list-all-masters test)]
+        (when (< (count masters) n)
+          (throw+ {:type :too-few-masters
+                   :masters masters}))))
+    {:log-interval 10000
+     :log-message (str "Waiting for at least " n " masters")
+     :timeout 300000}))
 
 (defn kill-tserver!
   "Kills the tserver"
@@ -168,11 +190,11 @@
   "Takes a directory, and returns a list of logfiles in that direcory, skipping
   the symlinks which end in .INFO, .WARNING, etc."
   [dir]
-  (remove (partial re-find #"\.(INFO|WARNING|ERROR)$")
+  ;(remove (partial re-find #"\.(INFO|WARNING|ERROR)$")
           (try (cu/ls dir {:full-path? true
                            :recursive? true
                            :types [:file]})
-               (catch RuntimeException e nil))))
+               (catch RuntimeException e nil)));)
 
 (defn ce-shared-opts
   "Shared options for both master and tserver"
@@ -216,13 +238,40 @@
 (defn start-opts
   "Common options we pass on `yugabyted start`."
   [test node]
-  ["--base_dir"          dir
-   ; Let's say each node is its own region and zone
-   "--cloud_location"    (str "jepsen." node "." node)
-   "--advertise_address" (cn/local-ip)
-   "--fault_tolerance"   "zone"
-   "--tserver_flags"     "enable_ysql_conn_mgr=true"
-   ])
+  ; See https://docs.yugabyte.com/stable/reference/configuration/yb-master/#configuration-flags
+  (let [master-flags
+        ; I'm not convinced these are actually passed through; YB seems to
+        ; ignore the replication_factor flags and just use 1.
+        {; We actually want to see what happens when clocks drift
+         "max_clock_skew_usec"         5000
+         "memory_limit_hard_bytes"     (* 1024 1024 1024) ; 1 GB
+         "replication_factor"          3
+         "yb_num_shards_per_tserver"   4
+         "ysql_num_shards_per_tserver" 4}
+
+        ; I'm not convinced these are actually passed through; YB seems to
+        ; ignore the replication_factor flags and just use 1.
+        ; See https://docs.yugabyte.com/stable/reference/configuration/yb-tserver/#configuration-flags
+        tserver-flags
+        {"enable_ysql_conn_mgr"        true
+         "memory_limit_hard_bytes"     (* 1024 1024 1024) ; 1 GB
+         "yb_num_shards_per_tserver"    4
+         "ysql_num_shards_per_tserver" 4}
+
+        ; Joins flags into a comma-separated string
+        flags     (fn [flags]
+                    (->> flags
+                         (map (fn [[k v]]
+                                (str k "=" v)))
+                         (str/join ",")))]
+    ["--advertise_address" (cn/local-ip)
+     "--base_dir"          dir
+     "--cloud_location"    (str "jepsen.local." node)
+     "--fault_tolerance"   "zone"
+
+     "--master_flags"      (flags master-flags)
+     "--tserver_flags"     (flags tserver-flags)
+     ]))
 
 (defrecord YugaByteDB
   []
@@ -290,11 +339,23 @@
         (locking db
           (yugabyted! "start"
                       (start-opts test node)
-                      (str "--join=" (cn/ip primary)))
+                      "--join" (cn/ip primary)))
           ; Wait for client ports
           (cu/await-tcp-port ip ycql-port {})
           (cu/await-tcp-port ip ysql-port {})
-          (info "Started")))))
+          (info "Started"))
+
+      ; Wait for masters to become known
+      (await-n-masters test 3)
+
+      ; Now we need to change the replication factor. The docs say YB
+      ; automatically changes to RF=3 when a third node joins, but my three,
+      ; four, and five-node clusters still seem to have RF=1.
+      (when (= node primary)
+        (yugabyted! "configure" "data_placement" "--base_dir" dir "--rf" 3))
+
+      ; We also have to wait for the leaders to get acquainted
+      (ycql.client/await-setup node)))
 
   (teardown! [db test node]
     (db/kill! db test node)
