@@ -272,7 +272,8 @@
   name, OS, DB."
   [opts]
   (let [api (keyword (namespace (:workload opts)))
-        url-version (first (re-find version-regex (get opts :url "")))]
+        url-version (when-let [url (:url opts)]
+                      (first (re-find version-regex url)))]
     (when (and (= :ycql api) (:connection-manager opts))
       (warn "Connection manager is a YSQL-only feature; disabling it for YCQL workload"
             (:workload opts)))
