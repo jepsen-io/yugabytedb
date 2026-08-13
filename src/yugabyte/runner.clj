@@ -45,7 +45,7 @@
 (def cli-opts
   "Options for single or multiple tests."
   [["-o" "--os NAME" "Operating system: either centos or debian."
-    :default :centos
+    :default :debian
     :parse-fn keyword
     :validate [#{:centos :debian} "One of `centos` or `debian`"]]
 
@@ -145,12 +145,12 @@
    ["-w" "--workload NAME"
     "Test workload to run. If omitted, runs all workloads"
     :parse-fn keyword
-    :default nil
     :validate [core/workloads (one-of core/workloads)]]])
 
 (def single-test-opts
   "Command line options for single tests"
   [["-w" "--workload NAME" "Test workload to run"
+    :default  :ysql/sz.append
     :parse-fn keyword
     :missing (str "--workload " (one-of core/workloads))
     :validate [core/workloads (one-of core/workloads)]]])
