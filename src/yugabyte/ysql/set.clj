@@ -1,9 +1,7 @@
 (ns yugabyte.ysql.set
   (:require [clojure.java.jdbc :as j]
-            [clojure.string :as str]
-            [clojure.tools.logging :refer [debug info warn]]
-            [jepsen.client :as client]
-            [jepsen.reconnect :as rc]
+            [clojure.tools.logging :refer [info]]
+            [jepsen.random :as random]
             [yugabyte.ysql.client :as c]))
 
 (def table-name "elements")
@@ -12,23 +10,29 @@
 ; Regular set test
 ;
 
-(defrecord YSQLSetYbClient []
+(def regular-index-name "idx_elements")
+
+(defrecord YSQLSetYbClient [isolation]
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
-    (c/execute! c (j/create-table-ddl table-name [[:val :int "PRIMARY KEY"]])))
-
+    (c/execute! c (j/create-table-ddl table-name [[:val :int "PRIMARY KEY"]]))
+    (c/execute! c (str "CREATE INDEX " regular-index-name " ON " table-name " (val)")))
 
   (invoke-op! [this test op c conn-wrapper]
-    (case (:f op)
-      :add (do (c/insert! c table-name {:val (:value op)})
-               (assoc op :type :ok))
+    (j/with-db-transaction [c c {:isolation isolation}]
+      (case (:f op)
+        :add (do (c/insert! c table-name {:val (:value op)})
+                 (assoc op :type :ok))
 
-      :read (let [value (->> (str "SELECT val FROM " table-name)
-                             (c/query c)
-                             (mapv :val))]
-              (assoc op :type :ok, :value value))))
-
+        :read (let [use-index? (zero? (random/long 2))
+                    value (->> (str (when use-index?
+                                      (str "/*+ IndexOnlyScan(" table-name " " regular-index-name ") */ "))
+                                    "SELECT val FROM " table-name)
+                               (c/query c)
+                               (mapv :val))]
+                (info table-name (if use-index? "IndexOnlyScan" "SeqScan"))
+                (assoc op :type :ok, :value value)))))
 
   (teardown-cluster! [this test c conn-wrapper]
     (c/drop-table c table-name)))
@@ -67,7 +71,7 @@
     (case (:f op)
       :add (do (c/insert! op c table-name {:id  (:value op)
                                            :val (:value op)
-                                           :grp (rand-int group-count)})
+                                           :grp (random/long group-count)})
                (assoc op :type :ok))
 
       :read (let [value (->> set-index-query

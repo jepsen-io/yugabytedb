@@ -1,14 +1,12 @@
 (ns yugabyte.nemesis
   (:require [clojure.tools.logging :refer :all]
-            [clojure.pprint :refer [pprint]]
             [jepsen.control :as c]
-            [jepsen.control.util :as cu]
             [jepsen.generator :as gen]
             [jepsen.nemesis :as nemesis]
             [jepsen.util :as util :refer [meh timeout]]
             [jepsen.nemesis.time :as nt]
-            [slingshot.slingshot :refer [try+]]
-            [yugabyte.auto :as auto]))
+            [yugabyte.auto :as auto]
+            [yugabyte.ysql.client :as ysql.client]))
 
 (defn process-nemesis
   "A nemesis that can start, stop, and kill randomly selected subsets of
@@ -21,26 +19,31 @@
       (let [nodes (:nodes test)
             nodes (case (:f op)
                     (:resume-tserver :start-tserver) nodes
-                    (:resume-master :start-master)  nodes
+                    (:resume-master :start-master)  (auto/master-nodes test)
 
-                    (:kill-tserver :pause-tserver)
+                    (:stop-tserver :kill-tserver :pause-tserver)
                     (util/random-nonempty-subset nodes)
 
-                    (:kill-master :pause-master)
-                    (util/random-nonempty-subset nodes))
+                    (:stop-master :kill-master :pause-master)
+                    (util/random-nonempty-subset (auto/master-nodes test)))
             db (:db test)]
         (assoc op :value
                (c/on-nodes test nodes
                  (fn [test node]
                    (case (:f op)
-                     :start-master   (auto/start-master!  db test node)
-                     :start-tserver  (auto/start-tserver! db test node)
-                     :kill-master    (auto/kill-master!   db)
-                     :kill-tserver   (auto/kill-tserver!  db)
-                     :pause-master   (cu/kill-bin! :STOP auto/master-bin)
-                     :pause-tserver  (cu/kill-bin! :STOP auto/tserver-bin)
-                     :resume-master  (cu/kill-bin! :CONT auto/master-bin)
-                     :resume-tserver (cu/kill-bin! :CONT auto/tserver-bin)))))))
+                     :start-master  (auto/start-master!  db test node)
+                     :start-tserver (do (auto/start-tserver! db test node)
+                                        (when (and (= :ysql (:api test))
+                                                   (:connection-manager test))
+                                          (ysql.client/check-setup-successful node test)))
+                     :stop-master   (auto/stop-master!   db)
+                     :stop-tserver  (auto/stop-tserver!  db)
+                     :kill-master   (auto/kill-master!   db)
+                     :kill-tserver  (auto/kill-tserver!  db)
+                     :pause-master    (auto/signal! "yb-master"   :STOP)
+                     :pause-tserver   (auto/signal! "yb-tserver"  :STOP)
+                     :resume-master   (auto/signal! "yb-master"   :CONT)
+                     :resume-tserver  (auto/signal! "yb-tserver"  :CONT)))))))
 
     (teardown! [this test])))
 
@@ -70,15 +73,17 @@
   []
   (nemesis/compose
     {#{:start-master  :start-tserver
+       :stop-master   :stop-tserver
        :kill-master   :kill-tserver
        :pause-master  :pause-tserver
        :resume-master :resume-tserver} (process-nemesis)
      {:start-partition :start
       :stop-partition  :stop}         (nemesis/partitioner nil)
-     {:reset-clock          :reset
-      :strobe-clock         :strobe
-      :check-clock-offsets  :check-offsets
-      :bump-clock           :bump}    (clock-nemesis-wrapper)}))
+     ;{:reset-clock          :reset
+     ; :strobe-clock         :strobe
+     ; :check-clock-offsets  :check-offsets
+     ; :bump-clock           :bump}    (clock-nemesis-wrapper)
+     }))
 
 ; Generators
 
@@ -131,6 +136,11 @@
                    :strobe         :strobe-clock
                    :bump           :bump-clock})))
 
+(defn flip-flop
+  "Switches between ops from two generators: a, b, a, b, ..."
+  [a b]
+  (map gen/once (cycle [a b])))
+
 (defn opt-mix
   "Given a nemesis map n, and a map of options to generators to use if that
   option is present in n, constructs a mix of generators for those options. If
@@ -155,13 +165,15 @@
             ; We return nil when mix does to avoid generating flip flops when
             ; *no* options are present in the nemesis opts.
             (when-let [mix (opt-mix n possible-gens)]
-              (gen/flip-flop mix recovery)))]
+              (flip-flop mix recovery)))]
 
     ; Mix together our different types of process crashes, partitions, and
     ; clock skews.
-    (->> [(o {:kill-tserver (op :kill-tserver)}
+    (->> [(o {:kill-tserver (op :kill-tserver)
+              :stop-tserver (op :stop-tserver)}
              (op :start-tserver))
-          (o {:kill-master (op :kill-master)}
+          (o {:kill-master (op :kill-master)
+              :stop-master (op :stop-master)}
              (op :start-master))
           (o {:pause-tserver (op :pause-tserver)}
              (op :resume-tserver))
@@ -178,8 +190,8 @@
          ; Introduce either random or fixed delays between ops
          ((case (:schedule n)
             (nil :random)    gen/stagger
-            :fixed           gen/delay)
-          (:interval n)))))
+            :fixed           gen/delay) ; todo think about missing delay-til
+           (:interval n)))))
 
 (defn final-generator
   "Takes a nemesis options map `n`, and constructs a generator to stop all
@@ -187,29 +199,28 @@
   operations."
   [n]
   (->> (cond-> []
-         (:clock-skew    n) (conj :reset-clock)
-         (:pause-master  n) (conj :resume-master)
-         (:pause-tserver n) (conj :resume-tserver)
-         (:kill-tserver  n) (conj :start-tserver)
-         (:kill-master   n) (conj :start-master)
+         (:clock-skew n)                          (conj :reset-clock)
+         (:pause-master n)                        (conj :resume-master)
+         (:pause-tserver n)                       (conj :resume-tserver)
+         (or (:kill-tserver n) (:stop-tserver n)) (conj :start-tserver)
+         (or (:kill-master n)  (:stop-master n))  (conj :start-master)
 
          (some n [:partition-one :partition-half :partition-ring])
          (conj :stop-partition))
-       (map op)))
+       (map op)
+       (map gen/once)))
 
 (defn full-generator
-  "Takes a nemesis options map `n`. If `n` has a :long-recovery option, builds
-  a generator which alternates between faults (mixed-generator) and long
-  recovery windows (final-generator). Otherwise, just emits faults from
-  mixed-generator."
+  "Takes a nemesis options map `n`. If `n` has a :no-recovery option, just emits faults from
+  mixed-generator. Otherwise, builds a generator which alternates between faults (mixed-generator)
+  and long recovery windows (final-generator)."
   [n]
-  (if (:long-recovery n)
+  (if (:no-recovery n)
+    (mixed-generator n)
     (let [mix     #(gen/time-limit 120 (mixed-generator n))
-          recover #(gen/phases (final-generator n)
-                               (gen/sleep 60))]
+          recover #(gen/phases (final-generator n) (gen/sleep 60))]
       (interleave (repeatedly mix)
-                  (repeatedly recover))))
-    (mixed-generator n))
+                  (repeatedly recover)))))
 
 (defn expand-options
   "We support shorthand options in nemesis maps, like :kill, which expands to
@@ -217,6 +228,8 @@
   [n]
   (cond-> n
     (:kill n) (assoc :kill-tserver true
+                     :kill-master true)
+    (:stop n) (assoc :stop-tserver true
                      :kill-master true)
     (:pause n) (assoc :pause-master true
                       :pause-tserver true)

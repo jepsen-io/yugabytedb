@@ -1,12 +1,11 @@
 (ns yugabyte.ysql.bank
   (:require [clojure.java.jdbc :as j]
-            [clojure.string :as str]
             [clojure.tools.logging :refer [debug info warn]]
-            [jepsen.client :as client]
-            [jepsen.reconnect :as rc]
+            [jepsen.random :as random]
             [yugabyte.ysql.client :as c]))
 
 (def table-name "accounts")
+(def index-name "idx_accounts")
 
 ;
 ; Single-table bank test
@@ -15,17 +14,22 @@
 (defn- read-accounts-map
   "Read {id balance} accounts map from a unified bank table"
   [op c]
-  (->> (str "SELECT id, balance FROM " table-name)
-       (c/query op c)
-       (map (juxt :id :balance))
-       (into (sorted-map))))
+  (let [use-index? (zero? (random/long 2))]
+    (info table-name (if use-index? "IndexOnlyScan" "SeqScan"))
+    (->> (str (when use-index?
+                (str "/*+ IndexOnlyScan(" table-name " " index-name ") */ "))
+              "SELECT id, balance FROM " table-name)
+         (c/query op c)
+         (map (juxt :id :balance))
+         (into (sorted-map)))))
 
-(defrecord YSQLBankYbClient [allow-negatives?]
+(defrecord YSQLBankYbClient [allow-negatives? isolation]
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
     (c/execute! c (j/create-table-ddl table-name [[:id :int "PRIMARY KEY"]
                                                   [:balance :bigint]]))
+    (c/execute! c (str "CREATE INDEX " index-name " ON " table-name " (id, balance)"))
     (c/with-retry
       (info "Creating accounts")
       (c/insert! c table-name {:id      (first (:accounts test))
@@ -41,8 +45,7 @@
       (assoc op :type :ok, :value (read-accounts-map op c))
 
       :transfer
-      (c/with-txn
-        c
+      (j/with-db-transaction [c c {:isolation isolation}]
         (let [{:keys [from to amount]} (:value op)]
           (let [b-from-before (c/select-single-value op c table-name :balance (str "id = " from))
                 b-to-before   (c/select-single-value op c table-name :balance (str "id = " to))
@@ -67,19 +70,21 @@
 ; Multi-table bank test
 ;
 
-(defrecord YSQLMultiBankYbClient [allow-negatives?]
+(defrecord YSQLMultiBankYbClient [allow-negatives? isolation]
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
 
     (doseq [a (:accounts test)]
       (let [acc-table-name (str table-name a)
+            acc-index-name (str index-name a)
             balance        (if (= a (first (:accounts test)))
                              (:total-amount test)
                              0)]
         (info "Creating table" a)
         (c/execute! c (j/create-table-ddl acc-table-name [[:id :int "PRIMARY KEY"]
                                                           [:balance :bigint]]))
+        (c/execute! c (str "CREATE INDEX " acc-index-name " ON " acc-table-name " (id, balance)"))
 
         (info "Populating account" a " (balance =" balance ")")
         (c/with-retry
@@ -90,19 +95,24 @@
   (invoke-op! [this test op c conn-wrapper]
     (case (:f op)
       :read
-      (c/with-txn
-        c
-        (let [accs (shuffle (:accounts test))]
+      (j/with-db-transaction [c c {:isolation isolation}]
+        (let [accs (random/shuffle (:accounts test))]
           (->> accs
                (mapv (fn [a]
-                       (c/select-single-value op c (str table-name a) :balance (str "id = " a))))
+                       (let [tbl (str table-name a)
+                             idx (str index-name a)
+                             use-index? (zero? (random/long 2))]
+                         (info tbl (if use-index? "IndexOnlyScan" "SeqScan"))
+                         (if use-index?
+                           (-> (c/query op c (str "/*+ IndexOnlyScan(" tbl " " idx ") */ SELECT balance FROM " tbl " WHERE id = " a))
+                               first :balance)
+                           (c/select-single-value op c tbl :balance (str "id = " a))))))
                (zipmap accs)
                (assoc op :type :ok, :value))))
 
       :transfer
       (let [{:keys [from to amount]} (:value op)]
-        (c/with-txn
-          c
+        (j/with-db-transaction [c c {:isolation isolation}]
           (let [b-from-before (c/select-single-value op c (str table-name from) :balance (str "id = " from))
                 b-to-before   (c/select-single-value op c (str table-name to) :balance (str "id = " to))
                 b-from-after  (- b-from-before amount)

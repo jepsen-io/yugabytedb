@@ -6,10 +6,9 @@
             [clojure.tools.logging :refer :all]
             [jepsen.core :as jepsen]
             [jepsen.cli :as cli]
+            [jepsen.random :as random]
             [jepsen.store :as store]
-            [jepsen [sql]]
-            [yugabyte.core :as core]
-            [yugabyte.nemesis :as nemesis]))
+            [yugabyte.core :as core]))
 
 (defn parse-nemesis-spec
   "Parses a comma-separated string of nemesis types, and turns it into an
@@ -37,60 +36,106 @@
   (info "Testing" (:name t) "attempt #" attempt)
   t)
 
+;
+; Options
+;
+; For the options format, see clojure.tools.cli/parse-opts
+;
+
 (def cli-opts
   "Options for single or multiple tests."
-  (cli/merge-opt-specs
-    jepsen.sql/cli-opts
-    [[nil "--final-recovery-time SECONDS" "How long to wait for the cluster to stabilize at the end of a test"
-      :default 30
-      :parse-fn parse-long
-      :validate [(complement neg?) "Must be a non-negative number"]]
+  [["-o" "--os NAME" "Operating system: either centos or debian."
+    :default :centos
+    :parse-fn keyword
+    :validate [#{:centos :debian} "One of `centos` or `debian`"]]
 
-     [nil "--nemesis SPEC" "A comma-separated list of nemesis types"
-      :default {:interval 10}
-      :parse-fn parse-nemesis-spec
-      :assoc-fn (fn [m k v] (update m :nemesis merge v))
-      :validate [(fn [parsed]
-                   (and (map? parsed)
-                        (every? core/nemesis-specs (keys parsed))))
-                 (str "Should be a comma-separated list of failure types. A failure "
-                      (.toLowerCase (cli/one-of core/nemesis-specs))
-                      ". Or, you can use 'none' to indicate no failures.")]]
+   [nil "--experimental-tuning-flags" "Enable some experimental tuning flags which are supposed to help YB recover faster"
+    :default false]
 
-     [nil "--nemesis-interval SECS"
-      "Roughly how long to wait between nemesis operations. Default: 10s."
-      :parse-fn parse-long
-      :assoc-fn (fn [m k v] (update m :nemesis assoc :interval v))
-      :validate [(complement neg?) "should be a non-negative number"]]
+   [nil "--heartbeat-flags" "Enable heartbeat tserver tracing flags on YB"
+    :default false]
 
-     [nil "--nemesis-long-recovery" "Every so often, have a long period of no faults, to see whether the cluster recovers."
-      :default false
-      :assoc-fn (fn [m k v] (update m :nemesis assoc :long-recovery v))]
+   [nil "--connection-manager" "Enable connection manager flags on YB since 2024.2 version"
+    :default false]
 
-     [nil "--nemesis-schedule SCHEDULE" "Whether to have randomized delays between nemesis actions, or fixed ones."
-      :parse-fn keyword
-      :assoc-fn (fn [m k v] (update m :nemesis assoc :schedule v))
-      :validate [#{:fixed :random} "Must be either 'fixed' or 'random'"]]
+   [nil "--clock-skew-flags" "Enable soft clock skew flags on YB"
+    :default true]
 
-     ["-r" "--replication-factor INT" "Number of nodes in each Raft cluster."
-      :default 3
-      :parse-fn #(Long/parseLong %)
-      :validate [pos? "Must be a positive integer"]]
+   [nil "--extreme-skew" "Enable extreme clock skew flags: master and tserver process can have different skew on one node"
+    :default false]
 
-     [nil "--yugabyte-ssh" "Override SSH options with hardcoded defaults for Yugabyte's internal testing environment"
-      :default false]
+   [nil "--final-recovery-time SECONDS" "How long to wait for the cluster to stabilize at the end of a test"
+    :default 30
+    :parse-fn parse-long
+    :validate [(complement neg?) "Must be a non-negative number"]]
 
-     [nil "--version VERSION" "What version of Yugabyte to install"
-      :default "2026.1.0.0-b118"]
+   [nil "--nemesis SPEC" "A comma-separated list of nemesis types"
+    :default {:interval 10}
+    :parse-fn parse-nemesis-spec
+    :assoc-fn (fn [m k v] (update m :nemesis merge v))
+    :validate [(fn [parsed]
+                 (and (map? parsed)
+                      (every? core/nemesis-specs (keys parsed))))
+               (str "Should be a comma-separated list of failure types. A failure "
+                    (.toLowerCase (cli/one-of core/nemesis-specs))
+                    ". Or, you can use 'none' to indicate no failures.")]]
 
-     [nil "--table-count INT" "Number of tables to spread rows across."
-      :default 5]
+   [nil "--nemesis-interval SECONDS"
+    "Roughly how long to wait between nemesis operations. Default: 10s."
+    :parse-fn parse-long
+    :assoc-fn (fn [m k v] (update m :nemesis assoc :interval v))
+    :validate [(complement neg?) "should be a non-negative number"]]
 
-     [nil "--url URL" "URL to Yugabyte tarball to install, has precedence over --version"
-      :default nil]
+   [nil "--nemesis-no-recovery" "Disable guaranteed time period for cluster recovery."
+    ; for some reason :default true will not trigger fn below
+    ; original logic was reverted because of this issue
+    :default false
+    :assoc-fn (fn [m k v] (update m :nemesis assoc :no-recovery v))]
 
-     [nil "--trace-cql" "If provided, logs CQL queries"
-      :default false]]))
+   [nil "--nemesis-schedule SCHEDULE" "Whether to have randomized delays between nemesis actions, or fixed ones."
+    :parse-fn keyword
+    :assoc-fn (fn [m k v] (update m :nemesis assoc :schedule v))
+    :validate [#{:fixed :random} "Must be either 'fixed' or 'random'"]]
+
+   ["-r" "--replication-factor INT" "Number of nodes in each Raft cluster."
+    :default 3
+    :parse-fn #(Long/parseLong %)
+    :validate [pos? "Must be a positive integer"]]
+
+   [nil "--yugabyte-ssh" "Override SSH options with hardcoded defaults for Yugabyte's internal testing environment"
+    :default false]
+
+   [nil "--version VERSION" "What version of Yugabyte to install"
+    :default "1.3.1.0"]
+
+   [nil "--table-count INT" "Number of tables to spread rows across."
+    :default 5]
+
+   [nil "--url URL" "URL to Yugabyte tarball to install, has precedence over --version"
+    :default nil]
+
+   [nil "--trace-cql" "If provided, logs CQL queries"
+    :default false]
+
+   [nil "--random-seed SEED" "Random seed for deterministic test execution. If not provided, a random seed is generated."
+    :default nil
+    :parse-fn parse-long]
+
+   [nil "--locking MODE" "Locking mode for append workloads: mixed (default), optimistic, or pessimistic"
+    :default nil
+    :parse-fn keyword
+    :validate [#{:mixed :optimistic :pessimistic} "Must be one of: mixed, optimistic, pessimistic"]]
+
+   [nil "--stress-tuning" "Enable stress-test flags that use tiny thresholds for internal subsystems (batching, compaction, WAL, cache, splitting, etc.) to trigger edge cases more frequently"
+    :default true]
+
+   [nil "--master-flags FLAG" "Extra gflag for master (repeatable): flag_name or flag_name=value. pg_conf flags are merged."
+    :default []
+    :assoc-fn (fn [m _ v] (update m :master-flags conj v))]
+
+   [nil "--tserver-flags FLAG" "Extra gflag for tserver (repeatable): flag_name or flag_name=value. pg_conf flags are merged."
+    :default []
+    :assoc-fn (fn [m _ v] (update m :tserver-flags conj v))]])
 
 (def test-all-opts
   "CLI options for testing everything."
@@ -109,6 +154,18 @@
     :parse-fn keyword
     :missing (str "--workload " (one-of core/workloads))
     :validate [core/workloads (one-of core/workloads)]]])
+
+(defn run-with-seed!
+  "Constructs and runs a Jepsen test. Takes a zero-arg function that builds the
+  test map. Wraps both construction and execution with jepsen.random/with-seed
+  for deterministic randomness. When seed is nil, defaults to
+  System/currentTimeMillis. Stores the seed in the test map as :random-seed
+  so it persists in results.edn."
+  [test-fn seed]
+  (let [seed (or seed (System/currentTimeMillis))]
+    (info "Random seed:" seed)
+    (random/with-seed seed
+      (jepsen/run! (assoc (test-fn) :random-seed seed)))))
 
 ;
 ; Subcommands
@@ -139,16 +196,16 @@
                       results       (->> tests
                                          (map-indexed
                                            (fn [i test-opts]
-                                             (let [test (core/yb-test test-opts)]
-                                               (try
-                                                 (info "\n\n\nTest "
-                                                       (inc i) "/" (count tests))
-                                                 (let [test' (jepsen/run! test)]
-                                                   [(.getPath (store/path test'))
-                                                    (:valid? (:results test'))])
-                                                 (catch Exception e
-                                                   (warn e "Test crashed")
-                                                   [(:name test) :crashed])))))
+                                             (try
+                                               (info "\n\n\nTest "
+                                                     (inc i) "/" (count tests))
+                                               (let [test' (run-with-seed! #(core/yb-test test-opts)
+                                                                           (:random-seed options))]
+                                                 [(.getPath (store/path test'))
+                                                  (:valid? (:results test'))])
+                                               (catch Exception e
+                                                 (warn e "Test crashed")
+                                                 [(:name test-opts) :crashed]))))
                                          (group-by second))]
 
                   (println "\n")
@@ -175,12 +232,30 @@
                   (println (count (results :crashed)) "crashed")
                   (println (count (results false)) "failures")))}})
 
+(defn single-test-cmd
+  "A command that runs a single test, wrapping execution with a random seed."
+  []
+  (let [opt-spec (cli/merge-opt-specs cli/test-opt-spec
+                                      (concat cli-opts single-test-opts))
+        opt-fn   cli/test-opt-fn]
+    {"test" {:opt-spec opt-spec
+             :opt-fn   opt-fn
+             :usage    "Runs a single test"
+             :run      (fn [{:keys [options]}]
+                         (info "Test options:\n"
+                               (with-out-str (pprint options)))
+                         (doseq [i (range (:test-count options))]
+                           (let [test (run-with-seed! #(core/yb-test options)
+                                                      (:random-seed options))]
+                             (case (:valid? (:results test))
+                               false    (System/exit 1)
+                               :unknown (System/exit 2)
+                               nil))))}}))
+
 (defn -main
   "Handles CLI arguments"
   [& args]
   (cli/run! (merge (cli/serve-cmd)
                    (test-all-cmd)
-                   (cli/single-test-cmd {:test-fn  core/yb-test
-                                         :opt-spec (concat cli-opts
-                                                           single-test-opts)}))
+                   (single-test-cmd))
             args))
