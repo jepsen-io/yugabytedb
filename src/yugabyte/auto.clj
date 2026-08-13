@@ -12,6 +12,7 @@
             [jepsen.control.net :as cn]
             [jepsen.control.util :as cu]
             [jepsen.os.debian :as debian]
+            [jepsen.yugabyte [util :refer [parse-version]]]
             [version-clj.core :as v]
             [yugabyte.ycql.client :as ycql.client]
             [yugabyte.ysql.client :as ysql.client]
@@ -38,20 +39,6 @@
   "Upper bound on number of bump time ops per test, needed to estimate max
   clock skew between servers"
   100)
-
-; OS-level polymorphic functions for Yugabyte
-(defprotocol OS
-  (install-python! [os]))
-
-(extend-protocol OS
-  Debian
-  (install-python! [os]
-    (debian/install [:python3]))
-
-  CentOS
-  (install-python! [os]
-    ; TODO: figure out the yum invocation we need here
-    ))
 
 (defprotocol Auto
   (install! [db test])
@@ -94,13 +81,12 @@
   (some #{node} (master-nodes test)))
 
 (defn master-addresses
-  "Given a test, returns a list of master addresses, like \"n1:7100,n2:7100,...
-  \""
+  "Given a test, returns a list of master addresses, like \"10.0.0.1:7100,10.0.0.2:7100,...\""
   [test]
   (assert (coll? (:nodes test)))
   (->> (master-nodes test)
        (take (:replication-factor test))
-       (map #(str % ":7100"))
+       (map #(str (cn/ip %) ":7100"))
        (str/join ",")))
 
 (defn yb-admin
@@ -215,42 +201,38 @@
   transient errors that occur while masters are still starting up and electing a
   leader."
   [test]
-  (let [max-tries 60]
-    (dt/with-retry
-      [tries max-tries]
-      (when (< tries max-tries)
-        (info "Waiting for masters to converge")
-        (Thread/sleep 1000))
+  (dt/with-retry [tries 60]
+    (when (zero? tries)
+      (throw (RuntimeException. "Giving up waiting for masters to converge.")))
 
-      (when (zero? tries)
-        (throw (RuntimeException. "Giving up waiting for masters to converge.")))
+    (Thread/sleep 1000)
 
-      (when-not (masters-converged? test)
-        (retry (dec tries)))
+    (when-not (masters-converged? test)
+      (info "Waiting for masters to converge...")
+      (retry (dec tries)))
 
-      :ready
+    :ready
 
-      (catch RuntimeException e
-        (condp re-find (.getMessage e)
-          #"Could not locate the leader master"      (retry (dec tries))
-          #"Timed out"                                (retry (dec tries))
-          #"Leader not yet ready to serve requests"   (retry (dec tries))
-          #"Leader not yet replicated NoOp"           (retry (dec tries))
-          #"Not the leader"                           (retry (dec tries))
-          #"This leader has not yet acquired a lease" (retry (dec tries))
-          (throw e))))))
+    (catch RuntimeException e
+      (if (some #(re-find % (.getMessage e))
+                [#"Could not locate the leader master"
+                 #"Timed out"
+                 #"Leader not yet ready to serve requests"
+                 #"Leader not yet replicated NoOp"
+                 #"Not the leader"
+                 #"This leader has not yet acquired a lease"])
+        (do (info "Waiting for masters:" (.getMessage e))
+            (retry (dec tries)))
+        (throw e)))))
 
 (defn await-tservers
   "Waits until all tservers for a test are online, according to this node."
   [test]
-  (dt/with-retry
-    [tries 60]
-    (when (< 0 tries)
-      (info "Waiting for tservers to come online")
-      (Thread/sleep 1000))
-
+  (dt/with-retry [tries 60]
     (when (zero? tries)
       (throw (RuntimeException. "Giving up waiting for tservers.")))
+
+    (Thread/sleep 1000)
 
     (when-not (= (count (:nodes test))
                  (->> (list-all-tservers test)
@@ -351,10 +333,13 @@
       ; Probably not installed
       )))
 
-(defn get-download-url
-  "Returns URL to tarball for specific released version"
-  [version]
-  (str "https://downloads.yugabyte.com/yugabyte-" version "-linux.tar.gz"))
+(defn download-url
+  "Returns URL to tarball for a test."
+  [test]
+  (or (:url test)
+      (let [{:keys [short full]} (parse-version (:version test))]
+        (str "https://software.yugabyte.com/releases/" short
+             "/yugabyte-" full "-linux-x86_64.tar.gz"))))
 
 (defn log-files-without-symlinks
   "Takes a directory, and returns a list of logfiles in that direcory, skipping
@@ -708,13 +693,13 @@
   (install! [db test]
     (c/su
       (c/cd dir
-            ; Post-install takes forever, so let's try and skip this on
-            ; subsequent runs
-            (let [url (or (:url test) (get-download-url (:version test)))
+            (let [url           (download-url test)
                   installed-url (get-installed-url)]
+              ; Post-install takes forever, so let's try and skip this on
+              ; subsequent runs
               (when-not (= url installed-url)
                 (info "Replacing version" installed-url "with" url)
-                (install-python! (:os test))
+                (debian/install ["python3"])
                 (assert (re-find #"Python 3"
                                  (c/exec :python3 :--version (c/lit "2>&1"))))
 

@@ -106,7 +106,7 @@
     :default false]
 
    [nil "--version VERSION" "What version of Yugabyte to install"
-    :default "1.3.1.0"]
+    :default "2026.1.0.0-b118"]
 
    [nil "--table-count INT" "Number of tables to spread rows across."
     :default 5]
