@@ -1,7 +1,10 @@
 (ns yugabyte.auto
-  "Shared automation functions for configuring, starting and stopping nodes."
-  (:require [clojure.tools.logging :refer :all]
-            [clojure.string :as str]
+  "Shared automation functions for configuring, starting and stopping nodes.
+
+  aphyr, 2026-08-13: Claude has been here; treat with suspicion."
+  (:require [clojure [pprint :refer [pprint]]
+                     [string :as str]]
+            [clojure.tools.logging :refer :all]
             [clojure.data.json :as json]
             [clj-http.client :as http]
             [dom-top.core :as dt]
@@ -28,11 +31,27 @@
 (def master-log-dir (str dir "/master/logs"))
 (def tserver-log-dir (str dir "/tserver/logs"))
 (def installed-url-file (str dir "/installed-url"))
+
+; Community-edition-specific files
+(def ce-data-dir (str dir "/data"))
+
+(def ce-master-bin (str dir "/bin/yb-master"))
+(def ce-master-log-dir (str ce-data-dir "/yb-data/master/logs"))
+(def ce-master-logfile (str ce-master-log-dir "/stdout"))
+(def ce-master-pidfile (str dir "/master.pid"))
+
+(def ce-tserver-bin (str dir "/bin/yb-tserver"))
+(def ce-tserver-log-dir (str ce-data-dir "/yb-data/tserver/logs"))
+(def ce-tserver-logfile (str ce-tserver-log-dir "/stdout"))
+(def ce-tserver-pidfile (str dir "/tserver.pid"))
+
+; Versions where things changed
 (def minimal-packed-version "2.16.4.0-b1")
 (def minimal-skip-prefix-locks-version
   "skip_prefix_locks gflag was introduced in 2026.1; older clusters fail to
   start when it is set."
   "2026.1.0.0-b0")
+
 (def tablespace-name "geo_tablespace")
 
 (def max-bump-time-ops-per-test
@@ -191,6 +210,7 @@
   never succeed and await-masters always timed out."
   [test]
   (let [masters (list-all-masters test)]
+    ;(info :masters (with-out-str (pprint masters)))
     (and (= (count (master-nodes test))
             (count (filter master-voter? masters)))
          (= 1 (count (filter (comp #{"LEADER"} :role) masters))))))
@@ -207,11 +227,10 @@
 
     (Thread/sleep 1000)
 
-    (when-not (masters-converged? test)
-      (info "Waiting for masters to converge...")
-      (retry (dec tries)))
-
-    :ready
+    (if (masters-converged? test)
+      :ready
+      (do (info "Waiting for masters to converge...")
+          (retry (dec tries))))
 
     (catch RuntimeException e
       (if (some #(re-find % (.getMessage e))
@@ -234,13 +253,13 @@
 
     (Thread/sleep 1000)
 
-    (when-not (= (count (:nodes test))
-                 (->> (list-all-tservers test)
-                      (filter (comp #{"ALIVE"} :state))
-                      count))
-      (retry (dec tries)))
-
-    :ready
+    (if (= (count (:nodes test))
+           (->> (list-all-tservers test)
+                (filter (comp #{"ALIVE"} :state))
+                count))
+      :ready
+      (do (info "Waiting for tservers")
+          (retry (dec tries))))
 
     (catch RuntimeException e
       (condp re-find (.getMessage e)
@@ -251,9 +270,10 @@
         #"Not the leader" (retry (dec tries))
         (throw e)))))
 
-(defn start! [db test node]
+(defn start!
   "Start both master and tserver. Only starts master if this node is a master
   node. Waits for masters and tservers."
+  [db test node]
   (info "Starting master and tserver for" (name (:api test)) "API")
 
   (when (master-node? test node)
@@ -349,18 +369,6 @@
           (try (cu/ls dir {:full-path? true})
                (catch RuntimeException e nil))))
 
-; Community-edition-specific files
-(def ce-data-dir (str dir "/data"))
-
-(def ce-master-bin (str dir "/bin/yb-master"))
-(def ce-master-log-dir (str ce-data-dir "/yb-data/master/logs"))
-(def ce-master-logfile (str ce-master-log-dir "/stdout"))
-(def ce-master-pidfile (str dir "/master.pid"))
-
-(def ce-tserver-bin (str dir "/bin/yb-tserver"))
-(def ce-tserver-log-dir (str ce-data-dir "/yb-data/tserver/logs"))
-(def ce-tserver-logfile (str ce-tserver-log-dir "/stdout"))
-(def ce-tserver-pidfile (str dir "/tserver.pid"))
 
 (defn ce-shared-opts
   "Shared options for both master and tserver"
@@ -383,6 +391,7 @@
    ])
 
 (defn master-tserver-packed-columns
+  "TODO: what is this?"
   [test]
   (if (and (v/newer-or-equal? (:version test) minimal-packed-version) (:yb-packed-columns-enabled test))
     [:--ysql_enable_packed_row]
@@ -600,10 +609,11 @@
     (str/join "," (map (fn [[k v]] (str k "=" v)) merged))))
 
 (defn preview-flags-csv-flag?
-  "Returns true if flag-name is allowed_preview_flags_csv, whose value is a
-  plain CSV list of flag names that must be unioned rather than overwritten:
-  gflags is last-wins, so two occurrences would silently drop earlier entries
-  (e.g. enable_ysql_conn_mgr) and make YB reject the preview flag at startup."
+  "Returns true if flag-name is (aphyr, 2026-08-13: Uh... that's not what this
+  does) allowed_preview_flags_csv, whose value is (aphyr: what???) a plain CSV
+  list of flag names that must be unioned rather than overwritten: gflags is
+  last-wins, so two occurrences would silently drop earlier entries (e.g.
+  enable_ysql_conn_mgr) and make YB reject the preview flag at startup."
   [flag-name]
   (str/includes? flag-name "allowed_preview_flags_csv"))
 
