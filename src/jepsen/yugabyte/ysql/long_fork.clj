@@ -10,7 +10,7 @@
   [key-seq]
   (str "SElECT key2, val FROM " table-name " WHERE key2 " (c/in key-seq)))
 
-(defrecord InternalClient [isolation]
+(defrecord InternalClient []
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
@@ -25,12 +25,9 @@
 
 
   (invoke-op! [this test op c conn-wrapper]
-
     (let [txn (:value op)]
       (case (:f op)
-        ; The multi-key read must run at the target isolation: long fork is
-        ; forbidden under snapshot and serializable, allowed at read-committed.
-        :read (j/with-db-transaction [c c {:isolation isolation}]
+        :read (c/with-txn test c
                 (let [ks   (seq (lf/op-read-keys op))
                       ; Look up values by the value index
                       vs   (->> (long-fork-index-query ks)

@@ -7,8 +7,8 @@
                  SELECT v WHERE k2 = k, so both the base table and the secondary
                  index are exercised and must agree with committed writes.
     :w  write -> upsert (k2 mirrors k; writes are unique)
-  Multi-op transactions run inside a JDBC transaction at the client's isolation
-  level; single-op transactions run without an explicit BEGIN."
+  Multi-op transactions run inside a JDBC transaction. Single-op transactions
+  do not run in a transaction."
   (:require [clojure.java.jdbc :as j]
             [jepsen.random :as random]
             [clojure.tools.logging :refer [info]]
@@ -43,7 +43,7 @@
          :r (read-register conn k)
          :w (write-register! conn k v))])
 
-(defrecord InternalClient [isolation]
+(defrecord InternalClient []
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
@@ -58,8 +58,8 @@
     (let [txn      (:value op)
           use-txn? (< 1 (count txn))
           txn'     (if use-txn?
-                     (j/with-db-transaction [c c {:isolation isolation}]
-                                            (mapv (partial mop! c) txn))
+                     (c/with-txn test c
+                       (mapv (partial mop! c) txn))
                      (mapv (partial mop! c) txn))]
       (assoc op :type :ok, :value txn')))
 

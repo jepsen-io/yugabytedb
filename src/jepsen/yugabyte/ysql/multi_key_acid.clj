@@ -39,8 +39,7 @@
           (assoc op :type :ok, :value (independent/tuple k2 ops')))
 
         :write
-        (c/with-txn
-          c
+        (c/with-txn test c
           (doseq [[f k1 v] ops]
             (assert (= :w f))
             ; Since there's no UPSERT for SQL...

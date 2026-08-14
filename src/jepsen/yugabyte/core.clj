@@ -102,37 +102,23 @@
   "A map of workload names to functions that can take option maps and construct workloads."
   (workloads-builder
     :ysql
-    [:rc.append          append/workload-rc                     (ysql.append/->Client :read-committed)
-     :rc.append-table    append/workload-rc-table               (ysql.append-table/->Client :read-committed)
-     :rc.monotonic       monotonic/workload                     (ysql.monotonic/->Client :read-committed)
-     :rc.types           types/workload                         (ysql.types/->Client :read-committed)
-     :rc.upsert          upsert/workload                        (ysql.upsert/->Client :read-committed)
-     :rc.wr              wr/workload-rc                         (ysql.wr/->Client :read-committed)
-     :set-index          set/workload                           (ysql.set/->IndexClient)
-     :si.append          append/workload-si                     (ysql.append/->Client :repeatable-read)
-     :si.append-table    append/workload-si-table               (ysql.append-table/->Client :repeatable-read)
-     :si.bank            bank/workload-allow-neg                (ysql.bank/->Client true :repeatable-read)
-     :si.bank-contention bank-improved/workload-contention-keys (ysql.bank-improved/->Client :repeatable-read)
-     :si.bank-multitable bank/workload-allow-neg                (ysql.bank/->Client true :repeatable-read)
-     :si.counter         counter/workload                       (ysql.counter/->Client :repeatable-read)
-     :si.long-fork       long-fork/workload                     (ysql.long-fork/->Client :repeatable-read)
-     :si.monotonic       monotonic/workload                     (ysql.monotonic/->Client :repeatable-read)
-     :si.set             set/workload                           (ysql.set/->Client :repeatable-read)
-     :si.types           types/workload                         (ysql.types/->Client :repeatable-read)
-     :si.upsert          upsert/workload                        (ysql.upsert/->Client :repeatable-read)
-     :si.wr              wr/workload-si                         (ysql.wr/->Client :repeatable-read)
-     :sz.append          append/workload-serializable           (ysql.append/->Client :serializable)
-     :sz.append-table    append/workload-serializable-table     (ysql.append-table/->Client :serializable)
-     :sz.bank            bank/workload-allow-neg                (ysql.bank/->Client true :serializable)
-     :sz.bank-contention bank-improved/workload-contention-keys (ysql.bank-improved/->Client :serializable)
-     :sz.bank-multitable bank/workload-allow-neg                (ysql.bank/->Client true :serializable)
-     :sz.counter         counter/workload                       (ysql.counter/->Client :serializable)
-     :sz.default-value   default-value/workload                 (ysql.default-value/->Client)
-     :sz.g2              g2/workload                            (ysql.g2/->Client :serializable)
-     :sz.long-fork       long-fork/workload                     (ysql.long-fork/->Client :serializable)
-     :sz.multi-key-acid  multi-key-acid/workload                (ysql.multi-key-acid/->Client)
-     :sz.set             set/workload                           (ysql.set/->Client :serializable)
-     :sz.single-key-acid single-key-acid/workload               (ysql.single-key-acid/->Client)]))
+    [:append          append/workload                        (ysql.append/->Client)
+     :append-table    append/workload-table                  (ysql.append-table/->Client)
+     :bank            bank/workload-allow-neg                (ysql.bank/->Client true)
+     :bank-contention bank-improved/workload-contention-keys (ysql.bank-improved/->Client)
+     :bank-multitable bank/workload-allow-neg                (ysql.bank/->Client true)
+     :counter         counter/workload                       (ysql.counter/->Client)
+     :default-value   default-value/workload                 (ysql.default-value/->Client)
+     :g2              g2/workload                            (ysql.g2/->Client)
+     :long-fork       long-fork/workload                     (ysql.long-fork/->Client)
+     :monotonic       monotonic/workload                     (ysql.monotonic/->Client)
+     :multi-key-acid  multi-key-acid/workload                (ysql.multi-key-acid/->Client)
+     :set             set/workload                           (ysql.set/->Client)
+     :set-index       set/workload                           (ysql.set/->IndexClient)
+     :single-key-acid single-key-acid/workload               (ysql.single-key-acid/->Client)]))
+     :types           types/workload                         (ysql.types/->Client)
+     :upsert          upsert/workload                        (ysql.upsert/->Client)
+     :wr              wr/workload                            (ysql.wr/->Client)
 
 (def workloads-jsql
   "Workloads from jepsen.sql"
@@ -262,7 +248,7 @@
       ; workloads split threads via (/ threads 2) and (/ threads 4), and jepsen
       ; asserts those group sizes are integers, so an odd count crashes.
       :concurrency (let [c (:concurrency opts)]
-                     (if (utils/is-test-serializable? opts)
+                     (if (= :serializable (:isolation opts))
                        (min c (max 4 (* 4 (quot c 8))))
                        c))
       ; Connection manager (YSQL Connection Manager / Odyssey) only applies to

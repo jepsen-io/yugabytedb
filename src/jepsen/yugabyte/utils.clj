@@ -20,14 +20,6 @@
   []
   (pretty-datetime (Date.)))
 
-(defn is-test-read-committed?
-  [test]
-  (clojure.string/includes? (name (:workload test)) "rc."))
-
-(defn is-test-serializable?
-  [test]
-  (clojure.string/includes? (name (:workload test)) "sz."))
-
 (defn is-test-append-table?
   [test]
   (clojure.string/includes? (name (:workload test)) "append-table"))

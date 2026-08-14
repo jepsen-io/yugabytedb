@@ -163,7 +163,8 @@
                     :plot (bank/plotter)})
    :generator    (gen/mix [diff-transfer-insert
                            bank/read])})
-
+; TODO: is the only difference here the presence of the :operations key? What
+; is that for?
 (defn workload-contention-keys
   [opts]
   {:max-transfer 5

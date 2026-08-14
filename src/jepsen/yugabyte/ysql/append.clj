@@ -200,7 +200,7 @@
       (random/nth [:optimistic :pessimistic])
       locking)))
 
-(defrecord InternalClient [isolation]
+(defrecord InternalClient []
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
@@ -229,8 +229,8 @@
           use-txn? (< 1 (count txn))
           resolved-locking (resolve-locking test)
           txn' (if use-txn?
-                 (j/with-db-transaction [c c {:isolation isolation}]
-                                        (mapv (partial mop! resolved-locking c test) txn))
+                 (c/with-txn test c
+                   (mapv (partial mop! resolved-locking c test) txn))
                  (mapv (partial mop! resolved-locking c test) txn))]
       (assoc op :type :ok, :value txn'))))
 

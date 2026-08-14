@@ -7,58 +7,23 @@
   (:require [elle.core :as elle]
             [jepsen.tests.cycle.append :as append]))
 
-(defn workload-si
+(defn workload
+  "A workload for a standard append test, with each list stored in a separate
+  row."
   [opts]
-  (-> (append/test {:key-count          32
-                    :max-txn-length     4
-                    :max-writes-per-key 1024
-                    :anomalies          [:internal :G-nonadjacent :G1 :G-SI]
-                    :consistency-models [:snapshot-isolation]
-                    :additional-graphs  [elle/realtime-graph]})))
+  (append/test (assoc
+                 (select-keys opts [:key-count
+                                    :max-txn-length
+                                    :max-writes-per-key])
+                :consistency-models [(:expected-consistency-model opts)])))
 
-(defn workload-rc
-  [opts]
-  (-> (append/test {:key-count          32
-                    :max-txn-length     4
-                    :max-writes-per-key 512
-                    :anomalies          [:G0 :G1a :G1b]
-                    :consistency-models [:read-committed]
-                    :additional-graphs  [elle/realtime-graph]})))
 
-(defn workload-serializable
+(defn workload-table
+  "A workload for a table-based append test, where each list is a table, and
+  each element a row."
   [opts]
-  (-> (append/test {:key-count          32
-                    :max-txn-length     4
-                    :max-writes-per-key 1024
-                    :anomalies          [:G1 :G2]
-                    ; :consistency-models [:strict-serializable] ; default value
-                    :additional-graphs  [elle/realtime-graph]})))
-;     (update :generator (partial gen/stagger 1/5)))
-
-; Append-table workloads use lower limits because each key is a separate table
-; and every read fetches all rows — O(n) per read instead of O(1).
-(defn workload-si-table
-  [opts]
-  (-> (append/test {:key-count          16
-                    :max-txn-length     4
-                    :max-writes-per-key 128
-                    :anomalies          [:internal :G-nonadjacent :G1 :G-SI]
-                    :consistency-models [:snapshot-isolation]
-                    :additional-graphs  [elle/realtime-graph]})))
-
-(defn workload-rc-table
-  [opts]
-  (-> (append/test {:key-count          16
-                    :max-txn-length     4
-                    :max-writes-per-key 128
-                    :anomalies          [:G0 :G1a :G1b]
-                    :consistency-models [:read-committed]
-                    :additional-graphs  [elle/realtime-graph]})))
-
-(defn workload-serializable-table
-  [opts]
-  (-> (append/test {:key-count          16
-                    :max-txn-length     4
-                    :max-writes-per-key 128
-                    :anomalies          [:G1 :G2]
-                    :additional-graphs  [elle/realtime-graph]})))
+  (append/test (assoc
+                 (select-keys opts [:key-count
+                                    :max-txn-length
+                                    :max-writes-per-key])
+                 :consistency-models [(:expected-consistency-model opts)])))

@@ -137,7 +137,7 @@
              :r      (read-ordered conn table)
              :append (insert-using-count! conn table v))]))
 
-(defrecord InternalClient [isolation]
+(defrecord InternalClient []
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper])
@@ -145,7 +145,7 @@
   (invoke-op! [this test op c conn-wrapper]
     (with-table c
       (let [txn  (:value op)
-            txn' (j/with-db-transaction [c c {:isolation isolation}]
+            txn' (c/with-txn test c
                    (mapv (partial mop! c test) txn))]
         (assoc op :type :ok, :value txn')))))
 

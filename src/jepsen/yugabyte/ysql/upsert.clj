@@ -30,7 +30,7 @@
          (map (juxt :k :v))
          (into {}))))
 
-(defrecord InternalClient [isolation]
+(defrecord InternalClient []
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
@@ -42,9 +42,7 @@
     (c/execute! c (str "CREATE INDEX " index-name " ON " table-name " (k2) INCLUDE (v)")))
 
   (invoke-op! [this test op c conn-wrapper]
-    ; Run at the client's isolation (see note in ysql.types): without it the op
-    ; uses the connection default (serializable) rather than si./rc.
-    (j/with-db-transaction [c c {:isolation isolation}]
+    (c/with-txn test c
       (case (:f op)
         :upsert
         (let [[k v]  (:value op)

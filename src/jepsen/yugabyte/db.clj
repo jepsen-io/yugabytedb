@@ -119,11 +119,11 @@
 (defn ysqlsh
   "Runs a ysqlsh command on a node. Args are passed to ysqlsh."
   [test node & args]
-  (let [args (conj args
-                   :-h (cn/ip node)
-                   :--port (if (:connection-manager test)
-                             5431
-                             5433))]
+  (let [args (concat args
+                     [:-h (cn/ip node)
+                      :--port (if (:connection-manager test)
+                                5431
+                                5433)])]
     (info "/bin/ysqlsh" args)
     (apply c/exec (str dir "/bin/ysqlsh")
            args)))
@@ -425,7 +425,7 @@
 (defn tserver-read-committed-flags
   "Read committed specific flags"
   [test]
-  (if (utils/is-test-read-committed? test)
+  (if (= :read-committed (:isolation test))
     [:--yb_enable_read_committed_isolation]
     []))
 
@@ -433,7 +433,7 @@
   "Serializable-isolation specific flags. skip_prefix_locks only exists in
   2026.1+; setting it on older versions makes the cluster fail to start."
   [test]
-  (if (and (utils/is-test-serializable? test)
+  (if (and (= :serializable (:isolation test))
            (v/newer-or-equal? (:version test) minimal-skip-prefix-locks-version))
     [:--skip_prefix_locks=false]
     []))
@@ -444,10 +444,15 @@
   allowed_preview_flags_csv (apply-extra-gflags collapses this into a single
   flag alongside any other preview flags, e.g. connection manager)."
   [test]
+  ; aphyr, 2026-08-14: is the implication here that this test does not pass
+  ; unless you specify these options? I suspect the answer is yes:
+  ; https://docs.yugabyte.com/stable/explore/transactions/explicit-locking/
+  ; suggests that DML and DDL could run concurrently and maybe that messes
+  ; things up?
   (if (utils/is-test-append-table? test)
     [:--allowed_preview_flags_csv "enable_object_locking_for_table_locks,ysql_yb_ddl_transaction_block_enabled,ysql_enable_concurrent_ddl"
-     :--enable_object_locking_for_table_locks
      :--ysql_yb_ddl_transaction_block_enabled
+     :--enable_object_locking_for_table_locks
      :--ysql_enable_concurrent_ddl]
     []))
 
@@ -456,7 +461,8 @@
   its preview allow-list entry must be present on the master as well."
   [test]
   (if (utils/is-test-append-table? test)
-    [:--allowed_preview_flags_csv "enable_object_locking_for_table_locks"
+    [:--allowed_preview_flags_csv "enable_object_locking_for_table_locks,ysql_yb_ddl_transaction_block_enabled"
+     :--ysql_yb_ddl_transaction_block_enabled
      :--enable_object_locking_for_table_locks]
     []))
 

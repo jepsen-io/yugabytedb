@@ -29,7 +29,7 @@
          (map (fn [r] [(:k r) (some-> (:v r) long)]))
          (into {}))))
 
-(defrecord InternalClient [isolation]
+(defrecord InternalClient []
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
@@ -41,10 +41,7 @@
     (c/execute! c (str "CREATE INDEX " index-name " ON " table-name " (k2) INCLUDE (v)")))
 
   (invoke-op! [this test op c conn-wrapper]
-    ; Run at the client's isolation. Without this the op uses the connection
-    ; default (serializable), so si./rc. would silently run serializable and
-    ; the hot key space would deadlock-storm every write to failure.
-    (j/with-db-transaction [c c {:isolation isolation}]
+    (c/with-txn test c
       (case (:f op)
         :write
         (let [[k v] (:value op)]

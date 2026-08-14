@@ -11,7 +11,7 @@
 (def table-name "counter")
 (def index-name "idx_counter")
 
-(defrecord InternalClient [isolation]
+(defrecord InternalClient []
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
@@ -21,7 +21,7 @@
     (c/insert! c table-name {:id 0 :count 0}))
 
   (invoke-op! [this test op c conn-wrapper]
-    (j/with-db-transaction [c c {:isolation isolation}]
+    (c/with-txn test c
       (case (:f op)
         ; update! can't handle column references
         :add (do (c/execute! op c [(str "UPDATE " table-name " SET count = count + ? WHERE id = 0") (:value op)])

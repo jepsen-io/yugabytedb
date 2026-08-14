@@ -24,7 +24,7 @@
                                     "select id from " table
                                     " where key = ? and value % 3 = 0") k]))))
 
-(defrecord InternalClient [isolation]
+(defrecord InternalClient []
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
@@ -37,7 +37,7 @@
 
   (invoke-op! [this test op c conn-wrapper]
     (let [[k [a-id b-id]] (:value op)]
-      (j/with-db-transaction [c c {:isolation isolation}]
+      (c/with-txn test c
         (if (or (predicate-nonempty? c table-a index-a k)
                 (predicate-nonempty? c table-b index-b k))
           ; Anti-dependency observed: refuse to insert.

@@ -158,7 +158,7 @@
 (def single-test-opts
   "Command line options for single tests"
   [["-w" "--workload NAME" "Test workload to run"
-    :default  :ysql/sz.append
+    :default  :jsql/append
     :parse-fn keyword
     :missing (str "--workload " (one-of core/workloads))
     :validate [core/workloads (one-of core/workloads)]]])

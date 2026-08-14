@@ -438,9 +438,9 @@
                         (throw e#)))))
 
 (defmacro with-txn
-  "Wrap evaluation within an SQL transaction using the default isolation level."
-  [c & body]
-  `(j/with-db-transaction [~c ~c]
+  "Wrap evaluation within an SQL transaction using the test's isolation level."
+  [test c & body]
+  `(j/with-db-transaction [~c ~c {:isolation (:isolation ~test)} ]
                           ~@body))
 
 (defmacro with-errors

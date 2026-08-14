@@ -12,7 +12,7 @@
 
 (def regular-index-name "idx_elements")
 
-(defrecord InternalClient [isolation]
+(defrecord InternalClient []
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
@@ -20,7 +20,7 @@
     (c/execute! c (str "CREATE INDEX " regular-index-name " ON " table-name " (val)")))
 
   (invoke-op! [this test op c conn-wrapper]
-    (j/with-db-transaction [c c {:isolation isolation}]
+    (c/with-txn test c
       (case (:f op)
         :add (do (c/insert! c table-name {:val (:value op)})
                  (assoc op :type :ok))

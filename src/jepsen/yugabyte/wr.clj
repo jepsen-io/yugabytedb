@@ -9,23 +9,10 @@
   (:require [elle.core :as elle]
             [jepsen.tests.cycle.wr :as wr]))
 
-(defn workload-si
+(defn workload
+  "Takes CLI options and constructs a workload: a partial test map."
   [opts]
   (wr/test {:key-count          10
             :max-txn-length     4
             :max-writes-per-key 256
-            :anomalies          [:internal :G-nonadjacent :G1 :G-SI]
-            :consistency-models [:snapshot-isolation]
-            :additional-graphs  [elle/realtime-graph]}))
-
-(defn workload-rc
-  [opts]
-  (wr/test {:key-count          10
-            :max-txn-length     4
-            :max-writes-per-key 256
-            :anomalies          [:G0 :G1a :G1b]
-            :consistency-models [:read-committed]
-            :additional-graphs  [elle/realtime-graph]}))
-
-; No workload-serializable: at serializable, multi-key-acid already covers
-; multi-key register transactions (via linearizability), so it would overlap.
+            :consistency-models [(:expected-consistency-model opts)]}))
