@@ -118,10 +118,15 @@
 
 (defn ysqlsh
   "Runs a ysqlsh command on a node. Args are passed to ysqlsh."
-  [test & args]
-  (info "/bin/ysqlsh" args)
-  (apply c/exec (str dir "/bin/ysqlsh")
-         args))
+  [test node & args]
+  (let [args (conj args
+                   :-h (cn/ip node)
+                   :--port (if (:connection-manager test)
+                             5431
+                             5433))]
+    (info "/bin/ysqlsh" args)
+    (apply c/exec (str dir "/bin/ysqlsh")
+           args)))
 
 (defn list-all-masters
   "Asks a node to list all the masters it knows about."
@@ -153,15 +158,10 @@
 (defn create-geo-tablespace
   [node tablespace-name replica-placement]
   (info "Creating tablespace" tablespace-name)
-  (let [port (if (:connection-manager test)
-               5431
-               5433)]
-    (ysqlsh test
-            :-p port
-            :-h (cn/ip node)
-            :-c (str "CREATE TABLESPACE " tablespace-name " "
-                     "WITH (replica_placement='"
-                     (json/write-str replica-placement) "');"))))
+  (ysqlsh test node
+          :-c (str "CREATE TABLESPACE " tablespace-name " "
+                   "WITH (replica_placement='"
+                   (json/write-str replica-placement) "');")))
 
 (defn setup-geo-partition
   [node tablespace-name]
@@ -819,20 +819,17 @@
     (if (= (:api test) :ysql)
       (let [colocated-clause (if (:yb-colocated test)
                                " WITH colocated = true"
-                               "")
-            port (if (:connection-manager test)
-                   5431
-                   5433)]
-        (ysqlsh test :-p port :-h (cn/ip node) :-c (str "DROP DATABASE IF EXISTS jepsen;"))
-        (ysqlsh test :-p port :-h (cn/ip node) :-c (str "DROP USER IF EXISTS jepsen;
+                               "")]
+        (ysqlsh test node :-c (str "DROP DATABASE IF EXISTS jepsen;"))
+        (ysqlsh test node :-c (str "DROP USER IF EXISTS jepsen;
                                                 CREATE USER jepsen createdb;"))
-        (ysqlsh test :-p port :-h (cn/ip node) :-U "jepsen" :-c (str "CREATE DATABASE jepsen" colocated-clause ";"))
+        (ysqlsh test node :-U "jepsen" :-c (str "CREATE DATABASE jepsen" colocated-clause ";"))
         (if (:geo-partition test)
           (do
             (info "Setup optional geo partitioning")
             (setup-geo-partition node tablespace-name)
-            (ysqlsh test :-p port :-h (cn/ip node) :-c (str "GRANT CREATE ON TABLESPACE " tablespace-name "_1a TO jepsen;"))
-            (ysqlsh test :-p port :-h (cn/ip node) :-c (str "GRANT CREATE ON TABLESPACE " tablespace-name "_2a TO jepsen;")))))))
+            (ysqlsh test node :-c (str "GRANT CREATE ON TABLESPACE " tablespace-name "_1a TO jepsen;"))
+            (ysqlsh test node :-c (str "GRANT CREATE ON TABLESPACE " tablespace-name "_2a TO jepsen;")))))))
 
   db/LogFiles
   (log-files [_ _ _]
