@@ -61,14 +61,13 @@
    :socketTimeout  (/ default-timeout 1000)})
 
 (defn- append-op-index
-  "Append /* <:op-index> */ to a given SQL statement or its part,
-  useful while digging through server-side logs.
-  If the given SQL contains a sequence, commented op-index
-  will be appended to a first element."
+  "Append /* <:op-index> */ to a given SQL statement or its part, useful while
+  digging through server-side logs. If the given SQL contains a sequence,
+  commented op-index will be appended to a first element."
   [op sql]
   (if (sequential? sql)
     (concat [(append-op-index op (first sql))] (rest sql))
-    (str sql " /* :op-index " (:op-index op) " */ ")))
+    (str sql " /* :op-index " (:index op) " */ ")))
 
 (defn query
   "Like jdbc query, but includes a default timeout in ms.

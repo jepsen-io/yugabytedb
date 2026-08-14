@@ -2,9 +2,8 @@
   "Looks for instances of long fork: a snapshot isolation violation involving
   incompatible orders of writes to disparate objects"
   (:refer-clojure :exclude [test])
-  (:require [jepsen.tests.long-fork :as lf]
-            [jepsen.yugabyte.generator :as ygen]))
+  (:require [jepsen.tests.long-fork :as lf]))
 
 (defn workload
   [opts]
-  (ygen/workload-with-op-index (lf/workload 3)))
+  (lf/workload 3))

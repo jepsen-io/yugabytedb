@@ -1,8 +1,7 @@
 (ns jepsen.yugabyte.set
   "Adds elements to sets and reads them back"
   (:require [jepsen.generator :as gen]
-            [jepsen.checker :as checker]
-            [jepsen.yugabyte.generator :as ygen]))
+            [jepsen.checker :as checker]))
 
 (defn adds
   []
@@ -19,6 +18,5 @@
   (let [threads  (:concurrency opts)]
     {:generator (->> (gen/reserve (/ threads 2) (adds)
                                   reads)
-                     (gen/stagger (/ 1 threads))
-                     (ygen/with-op-index))
+                     (gen/stagger (/ 1 threads)))
      :checker   (checker/set-full)}))

@@ -8,7 +8,6 @@
             [jepsen.util :as util]
             [jepsen.independent :as independent]
             [knossos.model :as model]
-            [jepsen.yugabyte.generator :as ygen]
             [jepsen.checker.timeline :as timeline])
   (:import (knossos.model Model)))
 
@@ -57,14 +56,13 @@
   [opts]
   (let [n (count (:nodes opts))
         threads (:concurrency opts)]
-    {:generator (ygen/with-op-index
-                  (independent/concurrent-generator
-                    (/ threads 2)
-                    (range)
-                    (fn [k]
-                      (->> (gen/reserve (/ threads 4) r w)
-                           (gen/stagger 1)
-                           (gen/process-limit threads)))))
+    {:generator (independent/concurrent-generator
+                  (/ threads 2)
+                  (range)
+                  (fn [k]
+                    (->> (gen/reserve (/ threads 4) r w)
+                         (gen/stagger 1)
+                         (gen/process-limit threads))))
      :checker   (independent/checker
                   (checker/compose
                     {:timeline (timeline/html)

@@ -5,8 +5,7 @@
   to 32 bits). Isolation-independent, so meaningful at read-committed and
   snapshot as well as serializable."
   (:require [jepsen.checker :as checker]
-            [jepsen.generator :as gen]
-            [jepsen.yugabyte.generator :as ygen]))
+            [jepsen.generator :as gen]))
 
 (def boundary-values
   "Edge-case 64-bit integers: zero/±1, 32-bit boundaries, and 64-bit extremes."
@@ -57,9 +56,10 @@
 (defn workload
   [opts]
   (let [threads (:concurrency opts)]
-    ; reads must be an infinite generator (repeat), not a single op map: a lone
-    ; map emits once then exhausts, starving reads to one op for the whole run.
-    {:generator (->> (gen/reserve (quot threads 2) (writes) (repeat (reads)))
-                     (gen/stagger (/ 1 threads))
-                     (ygen/with-op-index))
+    {:generator (->> (gen/reserve (quot threads 2) (writes)
+                                  (repeat (reads)))
+                     ; aphyr, 2028-08-14: why is this delayed at all? This was
+                     ; a regression test for a specific serialization/storage
+                     ; issues; it shouldn't be (!?) dependent on rate.
+                     (gen/stagger (/ 1 threads)))
      :checker   (checker)}))

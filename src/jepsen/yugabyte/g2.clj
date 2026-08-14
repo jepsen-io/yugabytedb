@@ -7,11 +7,9 @@
   this workload is meaningful only at SERIALIZABLE.
 
   Uses Jepsen's stock G2 generator and checker; see jepsen.tests.adya."
-  (:require [jepsen.tests.adya :as adya]
-            [jepsen.yugabyte.generator :as ygen]))
+  (:require [jepsen.tests.adya :as adya]))
 
 (defn workload
   [opts]
-  (ygen/workload-with-op-index
-    {:generator (adya/g2-gen)
-     :checker   (adya/g2-checker)}))
+  {:generator (adya/g2-gen)
+   :checker   (adya/g2-checker)})

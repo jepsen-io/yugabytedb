@@ -5,7 +5,7 @@
             :url  "http://www.eclipse.org/legal/epl-v10.html"}
   :dependencies [[org.clojure/clojure "1.11.1"]
                  [clj-http "3.12.3" :exclusions [commons-logging]]
-                 [jepsen "0.3.13"]
+                 [jepsen "0.3.14-SNAPSHOT"]
                  [io.jepsen/sql "0.1.1-SNAPSHOT"]
                  [com.yugabyte/cassandra-driver-core "3.10.3-yb-3"]
                  [org.slf4j/slf4j-api "2.0.17"]

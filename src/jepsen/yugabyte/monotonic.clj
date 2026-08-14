@@ -5,8 +5,7 @@
   A per-process decrease is a monotonic-reads violation (e.g. a stale follower
   read or a connection re-routed to a lagging replica)."
   (:require [jepsen.checker :as checker]
-            [jepsen.generator :as gen]
-            [jepsen.yugabyte.generator :as ygen]))
+            [jepsen.generator :as gen]))
 
 (defn checker
   []
@@ -30,10 +29,6 @@
   (let [threads (:concurrency opts)]
     {:generator (->> (gen/reserve (quot threads 2)
                                   (repeat {:type :invoke, :f :inc})
-                                  ; Must be an infinite generator, not a bare op
-                                  ; map: a lone map emits once and then exhausts,
-                                  ; which starves reads to a single op.
                                   (repeat {:type :invoke, :f :read}))
-                     (gen/stagger (/ 1 threads))
-                     (ygen/with-op-index))
+                     (gen/stagger (/ 1 threads)))
      :checker   (checker)}))

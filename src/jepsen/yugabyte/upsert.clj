@@ -11,8 +11,7 @@
   Catches lost-upsert / duplicate-key bugs under contention. Valid at every
   isolation level (uniqueness must hold under read-committed and snapshot too)."
   (:require [jepsen.checker :as checker]
-            [jepsen.generator :as gen]
-            [jepsen.yugabyte.generator :as ygen]))
+            [jepsen.generator :as gen]))
 
 (def key-count
   "Small key space so upserts contend heavily."
@@ -56,9 +55,6 @@
 (defn workload
   [opts]
   (let [threads (:concurrency opts)]
-    ; reads must be an infinite generator (repeat), not a single op map: a lone
-    ; map emits once then exhausts, starving reads to one op for the whole run.
     {:generator (->> (gen/reserve (quot threads 2) (upserts) (repeat (reads)))
-                     (gen/stagger (/ 1 threads))
-                     (ygen/with-op-index))
+                     (gen/stagger (/ 1 threads)))
      :checker   (checker)}))
