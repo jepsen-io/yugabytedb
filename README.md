@@ -7,8 +7,6 @@ databases, developed by Kyle 'Aphyr' Kingsbury to exercise and
 [validate](https://jepsen.io) the claims to consistency made by database
 developers or their documentation.
 
-## What is being tested?
-
 The tests run concurrent operations on different nodes in a YugaByteDB cluster
 and checks that the operations preserve the consistency properties defined in
 each test. During the tests, various combinations of nemeses can be added to
@@ -17,35 +15,40 @@ protocols.
 
 ## Running
 
-### Debian Jessie, with the Community Edition
-
-Quickstart:
-
-To run a single workload, use `lein run test`:
+You'll need a [Jepsen
+cluster](https://github.com/jepsen-io/jepsen#setting-up-a-jepsen-environment)
+with at least three Debian 13 nodes. Then try:
 
 ```
-lein run test -o debian --version 1.2.10.0 --workload ycql/counter --nemesis partition
+lein run test -w jsql/append --isolation repeatable-read
 ```
 
-This command runs the set test against version 1.2.10.0, with network partitions, assuming nodes run Debian Jessie.
+This command runs a list-append test against the default version. Many
+workloads and nemeses are available; see `lein run test --help` for details.
 
 To run a full suite of tests, with various workloads and nemeses, use `lein run
-test-all`
+test-all`:
 
 ```
-lein run test-all -o debian --version 1.2.10.0 --url https://downloads.yugabyte.com/yugabyte-ce-1.2.10.0-linux.tar.gz --concurrency 4n --time-limit 300 --only-workloads-expected-to-pass
+lein run test-all --concurrency 4n --time-limit 300 --only-workloads-expected-to-pass
 ```
 
-Here, we're testing a specific pre-release tarball of version 1.1.15.0-b16.
-We're running 4 clients per node, running for 300 seconds per test, and
-constraining our run to only those workloads we think should pass.
+This spawns 4 clients per node, runs each test for 300 seconds, and chooses
+only workloads and options we think should pass.
 
 #### Workloads
 
-The following workloads are available with `--workload` (or `-w`).
-Workloads have format `<api-name>/<test-name>`, where `<api-name>` is either `ycql` or `ysql`.
+The following workloads are available with `--workload` (or `-w`). Workloads
+come in three groups:
 
-The following tests are available for both YCQL and YSQL:
+- `ysql` - Workloads written specifically for the YugaByte SQL API
+- `ycql` - Workloads written specifically for the YugaByte Cassandra API
+- `jsql` - Workloads from jepsen.sql, which also use the YSQL API.
+
+Some of the workloads come in different variants for different isolation
+levels, like `si-` or `sz-`. See `jepsen.yugabyte.core` for the full list.
+
+In the YSQL and YCQL groups, the following workloads are available:
 
 - `counter` - concurrent counter increments.
 - `set` - inserts single records and concurrently reads all of them back.
@@ -61,6 +64,8 @@ YCQL-specific tests:
 YSQL-specific tests:
 
 - `bank-multitable` - like bank, but across different tables.
+
+For the `jsql` workloads, see [jepsen.sql's docs](https://github.com/jepsen-io/sql).
 
 #### Nemeses
 
@@ -83,84 +88,8 @@ with commas, like `--nemesis partition,clock-skew`:
 - `pause-tserver` - pauses tservers
 - `pause-master` - pauses masters
 
+## License
 
-### CentOS 7, Enterprise Edition
+Eclipse Public License, v1.0
 
-YugaByte's original version of these tests ran on CentOS 7, and used a
-pre-installed Enterprise Edition cluster. We've preserved those codepaths in
-this version of the tests (see `jepsen.auto`), but they haven't been tested,
-and likely need some additional polish to work.
-
-Install [https://leiningen.org](https://leiningen.org):
-
-```bash
-mkdir ~/bin
-curl https://raw.githubusercontent.com/technomancy/leiningen/stable/bin/lein -o /home/centos/bin/lein \
-  && chmod +x ~/bin/lein
-```
-
-Add `~/bin` to `$PATH`.
-
-Install Cassaforte driver:
-
-```bash
-mkdir ~/code
-git clone https://github.com/YugaByte/cassaforte ~/code/cassaforte
-cd ~/code/cassaforte
-git checkout driver-3.0-yb
-lein install
-```
-
-Install gnuplot:
-
-```bash
-sudo yum install gnuplot
-```
-
-#### YugaByteDB cluster setup
-
-- Create YugaByteDB cluster with 5 nodes and replication factor of 3.
-- Create text file `~/code/jepsen/nodes` and list all cluster nodes there - one per line, for example:
-```bash
-yb-test-jepsen-n1
-yb-test-jepsen-n2
-yb-test-jepsen-n3
-yb-test-jepsen-n4
-yb-test-jepsen-n5
-```
-- Setup cluster nodes for running Jepsen tests:
-```bash
-~/code/jepsen/yugabyte/setup-jepsen.sh
-```
-
-#### Wrapper scripts
-
-These wrapper scripts were written for YugaByte's version of these tests, and
-may no longer work correctly. They're preserved here in case anyone would like
-to use them going forward. They aren't necessary to run the tests; the CLI interface for these tests can run all tests automatically.
-
-All commands described below should be run in `~/code/jepsen/yugabyte` directory.
-
-In order to display help and see available tests and nemeses:
-```bash
-lein run test --help
-```
-
-To run test with specific nemesis, for example `start-stop-master`:
-```bash
-lein run test --nodes-file ~/code/jepsen/nodes --nemesis start-stop-master
-```
-
-Wrapper to manage log files seperately and summarize tests, for use in automated jenkins testing:
-```bash
-./run-jepsen.py
-```
-
-This will also classify test results by categories and put them into `~/code/jepsen/yugabyte/results-sorted` 
-sub-directories:
-- *ok*
-- *timed-out* - test run (including analysis phase) took more than time limit defined in `run-jepsen.py`.
-- *no-history* - file with operations history is absent.
-- *valid-unknown* - test results checker wasn't able to determine whether results are valid. 
-- *invalid* - history of operations is inconsisent.
-
+Copyright YugabyteDB and Jepsen, LLC
