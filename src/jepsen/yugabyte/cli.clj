@@ -128,7 +128,7 @@
       :parse-fn parse-long]
 
      [nil "--locking MODE" "Locking mode for append workloads: mixed (default), optimistic, or pessimistic"
-      :default nil
+      :default :mixed
       :parse-fn keyword
       :validate [#{:mixed :optimistic :pessimistic} "Must be one of: mixed, optimistic, pessimistic"]]
 

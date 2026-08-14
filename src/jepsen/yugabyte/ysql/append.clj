@@ -185,13 +185,15 @@
                      "TABLESPACE " tablespace-name "_" postfix)))
 
 (defn resolve-locking
-  "Resolves locking mode for a transaction. :mixed randomly picks :optimistic or :pessimistic."
-  [locking]
-  (if (= :mixed locking)
-    (random/nth [:optimistic :pessimistic])
-    locking))
+  "Resolves locking mode for a transaction. :mixed randomly picks :optimistic
+  or :pessimistic."
+  [test]
+  (let [locking (:locking test)]
+    (if (= :mixed locking)
+      (random/nth [:optimistic :pessimistic])
+      locking)))
 
-(defrecord InternalClient [isolation locking geo-partitioning]
+(defrecord InternalClient [isolation geo-partitioning]
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
@@ -219,7 +221,8 @@
   (invoke-op! [this test op c conn-wrapper]
     (let [txn (:value op)
           use-txn? (< 1 (count txn))
-          resolved-locking (resolve-locking locking)
+          resolved-locking (resolve-locking test)
+          _ (info :locking resolved-locking)
           txn' (if use-txn?
                  (j/with-db-transaction [c c {:isolation isolation}]
                                         (mapv (partial mop! geo-partitioning resolved-locking c test) txn))
