@@ -20,10 +20,6 @@
   []
   (pretty-datetime (Date.)))
 
-(defn is-test-geo-partitioned?
-  [test]
-  (clojure.string/includes? (name (:workload test)) "geo."))
-
 (defn is-test-read-committed?
   [test]
   (clojure.string/includes? (name (:workload test)) "rc."))

@@ -156,8 +156,12 @@
   (let [port (if (:connection-manager test)
                5431
                5433)]
-    (ysqlsh test :-p port :-h (cn/ip node) :-c (str "CREATE TABLESPACE " tablespace-name " "
-                                                    "WITH (replica_placement='" (json/write-str replica-placement) "');"))))
+    (ysqlsh test
+            :-p port
+            :-h (cn/ip node)
+            :-c (str "CREATE TABLESPACE " tablespace-name " "
+                     "WITH (replica_placement='"
+                     (json/write-str replica-placement) "');"))))
 
 (defn setup-geo-partition
   [node tablespace-name]
@@ -500,7 +504,7 @@
   "Geo partitioning specific mapping flags
   Each node will be mapped to id in [1 2] and then used in each node."
   [test node nodes]
-  (if (utils/is-test-geo-partitioned? test)
+  (if (:geo-partition test)
     (let [geo-ids (map #(+ 1 (mod % 2)) (range (count nodes)))
           geo-node-map (zipmap nodes geo-ids)
           node-id-int (get geo-node-map node)]
@@ -823,7 +827,7 @@
         (ysqlsh test :-p port :-h (cn/ip node) :-c (str "DROP USER IF EXISTS jepsen;
                                                 CREATE USER jepsen createdb;"))
         (ysqlsh test :-p port :-h (cn/ip node) :-U "jepsen" :-c (str "CREATE DATABASE jepsen" colocated-clause ";"))
-        (if (str/includes? (:name test) ".geo.")
+        (if (:geo-partition test)
           (do
             (info "Setup optional geo partitioning")
             (setup-geo-partition node tablespace-name)

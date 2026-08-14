@@ -75,6 +75,8 @@
       :parse-fn parse-long
       :validate [(complement neg?) "Must be a non-negative number"]]
 
+     [nil "--geo-partition" "For workloads like `append`, partitions tables with geo_partition"]
+
      [nil "--nemesis SPEC" "A comma-separated list of nemesis types"
       :default {:interval 10}
       :parse-fn parse-nemesis-spec

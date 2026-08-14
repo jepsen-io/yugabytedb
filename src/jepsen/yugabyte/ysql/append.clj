@@ -45,17 +45,17 @@
                  "")]
     (str "select (" col ") from " table " where k = ?" clause)))
 
-(defn get-geo-insert-column
-  [geo-partitioning]
-  (if (= geo-partitioning :geo)
+(defn geo-insert-column
+  [test]
+  (if (:geo-partition test)
     (str ", geo_partition")
     ""))
 
 (defn insert-primary-geo
-  [conn table geo-partitioning col row v geo-row]
+  [test conn table col row v geo-row]
   (c/execute! conn
               [(str "insert into " table
-                    " (k, k2, " col (get-geo-insert-column geo-partitioning) ")"
+                    " (k, k2, " col (geo-insert-column test) ")"
                     " values (?, ?, ?, ?)") row row v geo-row]))
 
 (defn insert-primary
@@ -66,8 +66,10 @@
                     " values (?, ?, ?)") row row v]))
 
 (defn geo-row-update
-  [geo-partitioning v]
-  (if (= geo-partitioning :geo)
+  [test v]
+  (if (:geo-partition test)
+    ; aphyr, 2026-08-14: These arguments are at most of size 2. Why on earth
+    ; are they using +' here? Some deep magic I don't understand? LLM nonsense?
     (str "and geo_partition = '" (+' (mod v 2) 1) "a'")
     ""))
 
@@ -79,26 +81,27 @@
           first
           (get (keyword col))
           (str/split #",")
-          (->>                                              ; Append might generate a leading , if the row already exists
+          (->> ; Append might generate a leading , if the row already exists
             (remove str/blank?)
             (mapv #(Long/parseLong %)))))
 
 (defn append-primary!
   "Writes a key based on primary key."
-  [locking geo-partitioning conn table row col v]
+  [test locking conn table row col v]
   (let [_ (if (= :pessimistic locking)
             (do
-              ; Randomly evaluate SELECT FOR UPDATE with timeout in case of pessimistic locking
+              ; Randomly evaluate SELECT FOR UPDATE with timeout in case of
+              ; pessimistic locking
               (c/query conn [(select-with-optional-lock locking col table) row])
               (Thread/sleep (long (random/long 2000))))
             nil)
         r (c/execute! conn [(str "update " table
                                  " set " col " = CONCAT(" col ", ',', ?)"
-                                 " where k = ? " (geo-row-update geo-partitioning row)) v row])]
+                                 " where k = ? " (geo-row-update test row)) v row])]
     (when (= [0] r)
       ; No rows updated
-      (if (= geo-partitioning :geo)
-        (insert-primary-geo conn table geo-partitioning col row v (str (+' (mod row 2) 1) "a"))
+      (if (:geo-partition test)
+        (insert-primary-geo test conn table col row v (str (+' (mod row 2) 1) "a"))
         (insert-primary conn table col row v))) v))
 
 (defn read-secondary
@@ -145,24 +148,27 @@
   "Executes a transactional micro-op of the form [f k v] on a connection, where
   f is either :r for read or :append for list append. Returns the completed
   micro-op."
-  [geo-partitioning locking conn test [f k v]]
+  [locking conn test [f k v]]
   (let [table (table-for test k)
         row (row-for test k)
         col (col-for test k)]
     [f k (case f
            :r
-           (let [use-index? (and (not= geo-partitioning :geo) (zero? (random/long 2)))]
-             (info table (if use-index? "IndexScan(k2)" "PrimaryScan(k)") "row=" row)
+           (let [use-index? (and (not (:geo-partition test))
+                                 (random/bool))]
+             (info table (if use-index? "IndexScan(k2)" "PrimaryScan(k)")
+                   "row=" row)
              (if use-index?
                (read-via-index locking conn table row col)
                (read-primary locking conn table row col)))
 
            :append
-           (append-primary! locking geo-partitioning conn table row col v))]))
+           (append-primary! test locking conn table row col v))]))
 
-(defn get-create-table-columns-clause
-  [geo-partitioning]
-  (if (= geo-partitioning :geo)
+(defn create-table-columns-clause
+  "Takes a test and returns a vector of columns for use with create-table-ddl."
+  [test]
+  (if (:geo-partition test)
     [[:k :int]
      [:k2 :int]
      [:geo_partition :varchar]]
@@ -170,19 +176,20 @@
      [:k :int "PRIMARY KEY"]
      [:k2 :int]]))
 
-(defn get-table-spec
-  [geo-partitioning]
-  (if (= geo-partitioning :geo)
+(defn table-spec
+  [test]
+  (if (:geo-partition test)
     "PARTITION BY LIST (geo_partition)"
     ""))
 
 (defn create-partitioning-table
-  [c table tablespace-name postfix]
-  (info (str "Create table partitions for " table "_" postfix " for '" postfix "'"))
+  [c table postfix]
+  (info (str "Create table partitions for " table "_" postfix))
   (c/execute! c (str "CREATE TABLE " table "_" postfix " "
                      "PARTITION OF " table " (k, k2, geo_partition"
-                     ", PRIMARY KEY (k, geo_partition)) FOR VALUES IN ('" postfix "') "
-                     "TABLESPACE " tablespace-name "_" postfix)))
+                     ", PRIMARY KEY (k, geo_partition)) FOR VALUES IN ('"
+                     postfix "') "
+                     "TABLESPACE " db/tablespace-name "_" postfix)))
 
 (defn resolve-locking
   "Resolves locking mode for a transaction. :mixed randomly picks :optimistic
@@ -193,30 +200,29 @@
       (random/nth [:optimistic :pessimistic])
       locking)))
 
-(defrecord InternalClient [isolation geo-partitioning]
+(defrecord InternalClient [isolation]
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
-    (let [tablespace-name db/tablespace-name]
-      (->> (range (table-count test))
-           (map table-name)
-           (map (fn [table]
-                  (info "Creating table" table)
-                  (c/execute! c (j/create-table-ddl
-                                  table
-                                  (into
-                                    (get-create-table-columns-clause geo-partitioning)
-                                    ; Columns for n values packed in this row
-                                    (map (fn [i] [(col-for test i) :text])
-                                         (range keys-per-row)))
-                                  {:conditional? true
-                                   :table-spec   (get-table-spec geo-partitioning)}))
-                  (when (not= geo-partitioning :geo)
-                    (c/execute! c (str "CREATE INDEX idx_" table " ON " table " (k2)")))
-                  (when (= geo-partitioning :geo)
-                    (create-partitioning-table c table tablespace-name "1a")
-                    (create-partitioning-table c table tablespace-name "2a"))))
-           dorun)))
+    (->> (range (table-count test))
+         (map table-name)
+         (map (fn [table]
+                (info "Creating table" table)
+                (c/execute! c (j/create-table-ddl
+                                table
+                                (into
+                                  (create-table-columns-clause test)
+                                  ; Columns for n values packed in this row
+                                  (map (fn [i] [(col-for test i) :text])
+                                       (range keys-per-row)))
+                                {:conditional? true
+                                 :table-spec   (table-spec test)}))
+                (if (:geo-partition test)
+                  (do (create-partitioning-table c table "1a")
+                      (create-partitioning-table c table "2a"))
+                  (c/execute! c (str "CREATE INDEX idx_" table " ON "
+                                     table " (k2)")))))
+         dorun))
 
   (invoke-op! [this test op c conn-wrapper]
     (let [txn (:value op)
@@ -224,8 +230,8 @@
           resolved-locking (resolve-locking test)
           txn' (if use-txn?
                  (j/with-db-transaction [c c {:isolation isolation}]
-                                        (mapv (partial mop! geo-partitioning resolved-locking c test) txn))
-                 (mapv (partial mop! geo-partitioning resolved-locking c test) txn))]
+                                        (mapv (partial mop! resolved-locking c test) txn))
+                 (mapv (partial mop! resolved-locking c test) txn))]
       (assoc op :type :ok, :value txn'))))
 
 (c/defclient Client InternalClient)

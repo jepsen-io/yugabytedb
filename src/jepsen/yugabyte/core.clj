@@ -102,28 +102,26 @@
   "A map of workload names to functions that can take option maps and construct workloads."
   (workloads-builder
     :ysql
-    [:rc.append          append/workload-rc                     (ysql.append/->Client :read-committed :no-geo)
+    [:rc.append          append/workload-rc                     (ysql.append/->Client :read-committed)
      :rc.append-table    append/workload-rc-table               (ysql.append-table/->Client :read-committed)
-     :rc.geo.append      append/workload-rc                     (ysql.append/->Client :read-committed :geo)
      :rc.monotonic       monotonic/workload                     (ysql.monotonic/->Client :read-committed)
      :rc.types           types/workload                         (ysql.types/->Client :read-committed)
      :rc.upsert          upsert/workload                        (ysql.upsert/->Client :read-committed)
      :rc.wr              wr/workload-rc                         (ysql.wr/->Client :read-committed)
      :set-index          set/workload                           (ysql.set/->IndexClient)
-     :si.append          append/workload-si                     (ysql.append/->Client :repeatable-read :no-geo)
+     :si.append          append/workload-si                     (ysql.append/->Client :repeatable-read)
      :si.append-table    append/workload-si-table               (ysql.append-table/->Client :repeatable-read)
      :si.bank            bank/workload-allow-neg                (ysql.bank/->Client true :repeatable-read)
      :si.bank-contention bank-improved/workload-contention-keys (ysql.bank-improved/->Client :repeatable-read)
      :si.bank-multitable bank/workload-allow-neg                (ysql.bank/->Client true :repeatable-read)
      :si.counter         counter/workload                       (ysql.counter/->Client :repeatable-read)
-     :si.geo.append      append/workload-si                     (ysql.append/->Client :repeatable-read :geo)
      :si.long-fork       long-fork/workload                     (ysql.long-fork/->Client :repeatable-read)
      :si.monotonic       monotonic/workload                     (ysql.monotonic/->Client :repeatable-read)
      :si.set             set/workload                           (ysql.set/->Client :repeatable-read)
      :si.types           types/workload                         (ysql.types/->Client :repeatable-read)
      :si.upsert          upsert/workload                        (ysql.upsert/->Client :repeatable-read)
      :si.wr              wr/workload-si                         (ysql.wr/->Client :repeatable-read)
-     :sz.append          append/workload-serializable           (ysql.append/->Client :serializable :no-geo)
+     :sz.append          append/workload-serializable           (ysql.append/->Client :serializable)
      :sz.append-table    append/workload-serializable-table     (ysql.append-table/->Client :serializable)
      :sz.bank            bank/workload-allow-neg                (ysql.bank/->Client true :serializable)
      :sz.bank-contention bank-improved/workload-contention-keys (ysql.bank-improved/->Client :serializable)
@@ -131,7 +129,6 @@
      :sz.counter         counter/workload                       (ysql.counter/->Client :serializable)
      :sz.default-value   default-value/workload                 (ysql.default-value/->Client)
      :sz.g2              g2/workload                            (ysql.g2/->Client :serializable)
-     :sz.geo.append      append/workload-serializable           (ysql.append/->Client :serializable :geo)
      :sz.long-fork       long-fork/workload                     (ysql.long-fork/->Client :serializable)
      :sz.multi-key-acid  multi-key-acid/workload                (ysql.multi-key-acid/->Client)
      :sz.set             set/workload                           (ysql.set/->Client :serializable)
@@ -370,7 +367,7 @@
   (let [; TODO: <sigh> not sure why they're doing random choices here; I assume
         ; these should be CLI parameters.
         packed-columns-enabled (random/bool)
-        colocated (and (not (utils/is-test-geo-partitioned? opts)) (random/bool))]
+        colocated (and (not (:geo-partition opts)) (random/bool))]
     (assoc opts
            :yb-packed-columns-enabled packed-columns-enabled
            :yb-colocated colocated)))
