@@ -1,4 +1,4 @@
-(defproject yugabyte "0.1.2-SNAPSHOT"
+(defproject io.jepsen/yugabyte "0.1.2-SNAPSHOT"
   :description "Jepsen testing for YugaByteDB"
   :url "http://yugabyte.com/"
   :license {:name "Eclipse Public License"
@@ -14,7 +14,5 @@
                  [com.yugabyte/jdbc-yugabytedb "42.3.5-yb-3"]
                  [version-clj "2.0.2"]
                  [clj-wallhack "1.0.1"]]
-  :main yugabyte.runner
+  :main jepsen.yugabyte.cli
   :jvm-opts ["-Djava.awt.headless=true" "-Xms4g" "-Xmx10g"])
-;  :aot [yugabyte.runner
-;        clojure.tools.logging.impl])
