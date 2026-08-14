@@ -222,7 +222,6 @@
     (let [txn (:value op)
           use-txn? (< 1 (count txn))
           resolved-locking (resolve-locking test)
-          _ (info :locking resolved-locking)
           txn' (if use-txn?
                  (j/with-db-transaction [c c {:isolation isolation}]
                                         (mapv (partial mop! geo-partitioning resolved-locking c test) txn))
