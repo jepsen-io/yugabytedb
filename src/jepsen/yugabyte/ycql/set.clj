@@ -5,7 +5,7 @@
 (def keyspace "jepsen")
 (def table "elements")
 
-(c/defclient CQLSetClient keyspace []
+(c/defclient Client keyspace []
   (setup! [this test]
     (c/create-table conn table
                     {:val         :int
@@ -31,7 +31,7 @@
   "Number of distinct groups for indexing"
   8)
 
-(c/defclient CQLSetIndexClient keyspace []
+(c/defclient IndexClient keyspace []
   (setup! [this test]
     (c/create-transactional-table conn table
                                   {:key         :int

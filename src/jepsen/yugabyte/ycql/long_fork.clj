@@ -6,7 +6,7 @@
 (def keyspace "jepsen")
 (def table "long_fork")
 
-(c/defclient CQLLongForkIndexClient keyspace []
+(c/defclient Client keyspace []
   (setup! [this test]
     (c/create-transactional-table
       conn table

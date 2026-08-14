@@ -9,7 +9,7 @@
 
 (def table-name "monotonic")
 
-(defrecord MonotonicClient [isolation]
+(defrecord InternalClient [isolation]
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
@@ -37,4 +37,4 @@
   (teardown-cluster! [this test c conn-wrapper]
     (c/drop-table c table-name)))
 
-(c/defclient Client MonotonicClient)
+(c/defclient Client InternalClient)

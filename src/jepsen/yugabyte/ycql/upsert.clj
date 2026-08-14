@@ -8,7 +8,7 @@
 (def keyspace "jepsen")
 (def table "upsert")
 
-(c/defclient CQLUpsert keyspace []
+(c/defclient Client keyspace []
   (setup! [this test]
     (c/create-table conn table
                     {:k           :int

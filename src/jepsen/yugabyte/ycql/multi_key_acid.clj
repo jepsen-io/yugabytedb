@@ -7,7 +7,7 @@
 (def table-name "multi_key_acid")
 (def keyspace "jepsen")
 
-(c/defclient CQLMultiKey keyspace []
+(c/defclient Client keyspace []
   (setup! [this test]
     (c/create-transactional-table
       conn table-name

@@ -10,7 +10,7 @@
   [key-seq]
   (str "SElECT key2, val FROM " table-name " WHERE key2 " (c/in key-seq)))
 
-(defrecord YSQLLongForkYbClient [isolation]
+(defrecord InternalClient [isolation]
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
@@ -56,4 +56,4 @@
     (c/drop-table c table-name)))
 
 
-(c/defclient YSQLLongForkClient YSQLLongForkYbClient)
+(c/defclient Client InternalClient)

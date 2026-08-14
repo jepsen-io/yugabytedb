@@ -205,14 +205,20 @@
        :log?  false})))
 
 (defprotocol YSQLYbClient
-  "Used by defclient macro in conjunction with jepsen.client/Client specifying actual logic"
+  "Used by defclient macro in conjunction with jepsen.client/Client specifying
+  actual logic"
+
   (setup-cluster! [client test c conn-wrapper]
-    "Called once on a random node to set up database/cluster state for testing.")
+    "Called once on a random node to set up database/cluster state for
+    testing.")
+
   (invoke-op! [client test operation c conn-wrapper]
-    "Apply an operation to the client, returning an operation to be appended to the history.")
+    "Apply an operation to the client, returning an operation to be appended to
+    the history.")
+
   (teardown-cluster! [client test c conn-wrapper]
-    "Called once on a random node to tear down the client/database/cluster when work is complete.
-    If it throws retryable error, can be called again."))
+    "Called once on a random node to tear down the client/database/cluster when
+    work is complete. If it throws retryable error, can be called again."))
 
 (defn error-fn
   "Takes an Exception thrown by the YugaByte SQL client and returns an error

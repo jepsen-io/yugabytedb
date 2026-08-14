@@ -30,7 +30,7 @@
          (map (juxt :k :v))
          (into {}))))
 
-(defrecord UpsertClient [isolation]
+(defrecord InternalClient [isolation]
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
@@ -58,4 +58,4 @@
   (teardown-cluster! [this test c conn-wrapper]
     (c/drop-table c table-name)))
 
-(c/defclient Client UpsertClient)
+(c/defclient Client InternalClient)

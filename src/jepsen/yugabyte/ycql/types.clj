@@ -18,7 +18,7 @@
 (def keyspace "jepsen")
 (def table "types")
 
-(c/defclient CQLTypes keyspace []
+(c/defclient Client keyspace []
   (setup! [this test]
     (c/create-transactional-table conn table
                                   {:k           :int

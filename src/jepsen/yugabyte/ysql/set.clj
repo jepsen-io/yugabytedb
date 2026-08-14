@@ -12,7 +12,7 @@
 
 (def regular-index-name "idx_elements")
 
-(defrecord YSQLSetYbClient [isolation]
+(defrecord InternalClient [isolation]
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
@@ -37,9 +37,7 @@
   (teardown-cluster! [this test c conn-wrapper]
     (c/drop-table c table-name)))
 
-
-(c/defclient YSQLSetClient YSQLSetYbClient)
-
+(c/defclient Client InternalClient)
 
 ;
 ; Index-governed set test
@@ -57,7 +55,7 @@
 (def set-index-query
   (str "SELECT val FROM " table-name " WHERE grp " (c/in (range group-count))))
 
-(defrecord YSQLSetIndexYbClient []
+(defrecord InternalIndexClient []
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
@@ -83,5 +81,4 @@
     (c/drop-index c index-name)
     (c/drop-table c table-name)))
 
-
-(c/defclient YSQLSetIndexClient YSQLSetIndexYbClient)
+(c/defclient IndexClient InternalIndexClient)

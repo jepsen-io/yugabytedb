@@ -29,7 +29,7 @@
          (map (fn [r] [(:k r) (some-> (:v r) long)]))
          (into {}))))
 
-(defrecord TypesClient [isolation]
+(defrecord InternalClient [isolation]
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
@@ -58,4 +58,4 @@
   (teardown-cluster! [this test c conn-wrapper]
     (c/drop-table c table-name)))
 
-(c/defclient Client TypesClient)
+(c/defclient Client InternalClient)

@@ -8,7 +8,7 @@
 (def keyspace   "jepsen")
 (def table-name "accounts")
 
-(c/defclient CQLBank keyspace []
+(c/defclient Client keyspace []
   (setup! [this test]
     (c/create-transactional-table
       conn table-name
@@ -51,7 +51,7 @@
   (teardown! [this test]))
 
 ;; Shouldn't be used until we support transactions with selects.
-(c/defclient CQLMultiBank keyspace []
+(c/defclient MultiClient keyspace []
   (setup! [this test]
     (info "Creating accounts")
     (doseq [a (:accounts test)]

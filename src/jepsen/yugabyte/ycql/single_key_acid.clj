@@ -6,7 +6,7 @@
 (def keyspace "jepsen")
 (def table-name "single_key_acid")
 
-(c/defclient CQLSingleKey keyspace []
+(c/defclient Client keyspace []
   (setup! [this test]
     (c/create-table conn table-name
                     {:id  :int

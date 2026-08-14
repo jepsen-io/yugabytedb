@@ -24,7 +24,7 @@
                                     "select id from " table
                                     " where key = ? and value % 3 = 0") k]))))
 
-(defrecord G2Client [isolation]
+(defrecord InternalClient [isolation]
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
@@ -52,4 +52,4 @@
     (c/drop-table c table-a)
     (c/drop-table c table-b)))
 
-(c/defclient Client G2Client)
+(c/defclient Client InternalClient)

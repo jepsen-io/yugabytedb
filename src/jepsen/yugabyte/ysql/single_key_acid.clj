@@ -9,7 +9,7 @@
 (def table-name "single_key_acid")
 (def index-name "idx_single_key_acid")
 
-(defrecord YSQLSingleKeyAcidYbClient []
+(defrecord InternalClient []
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
@@ -47,4 +47,4 @@
     (c/drop-table c table-name)))
 
 
-(c/defclient YSQLSingleKeyAcidClient YSQLSingleKeyAcidYbClient)
+(c/defclient Client InternalClient)

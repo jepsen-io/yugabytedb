@@ -11,7 +11,7 @@
 (def table-name "counter")
 (def index-name "idx_counter")
 
-(defrecord YSQLCounterYbClient [isolation]
+(defrecord InternalClient [isolation]
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
@@ -40,4 +40,4 @@
     (c/drop-table c table-name)))
 
 
-(c/defclient YSQLCounterClient YSQLCounterYbClient)
+(c/defclient Client InternalClient)

@@ -43,7 +43,7 @@
          :r (read-register conn k)
          :w (write-register! conn k v))])
 
-(defrecord WRClient [isolation]
+(defrecord InternalClient [isolation]
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
@@ -66,4 +66,4 @@
   (teardown-cluster! [this test c conn-wrapper]
     (c/drop-table c table-name)))
 
-(c/defclient Client WRClient)
+(c/defclient Client InternalClient)

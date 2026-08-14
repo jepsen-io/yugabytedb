@@ -25,7 +25,7 @@
      (into (sorted-map)))))
 
 
-(defrecord YSQLBankContentionYBClient [isolation]
+(defrecord InternalClient [isolation]
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
@@ -102,4 +102,4 @@
   (teardown-cluster! [this test c conn-wrapper]
     (c/drop-table c table-name)))
 
-(c/defclient YSQLBankContentionClient YSQLBankContentionYBClient)
+(c/defclient Client InternalClient)

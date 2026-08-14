@@ -7,7 +7,7 @@
 (def keyspace "jepsen")
 (def table "monotonic")
 
-(c/defclient CQLMonotonic keyspace []
+(c/defclient Client keyspace []
   (setup! [this test]
     (c/create-table conn table
                     {:k           :int

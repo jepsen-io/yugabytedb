@@ -10,7 +10,7 @@
 (def table-name "multi_key_acid")
 (def index-name "idx_multi_key_acid")
 
-(defrecord YSQLMultiKeyAcidYbClient []
+(defrecord InternalClient []
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
@@ -55,4 +55,4 @@
     (c/drop-table c table-name)))
 
 
-(c/defclient YSQLMultiKeyAcidClient YSQLMultiKeyAcidYbClient)
+(c/defclient Client InternalClient)

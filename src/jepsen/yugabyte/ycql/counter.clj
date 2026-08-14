@@ -6,7 +6,7 @@
 (def table-name "counter")
 (def keyspace "jepsen")
 
-(c/defclient CQLCounterClient keyspace []
+(c/defclient Client keyspace []
   (setup! [this test]
     (c/create-table conn table-name
                     {:id          :int

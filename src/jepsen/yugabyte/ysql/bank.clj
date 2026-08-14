@@ -23,7 +23,7 @@
          (map (juxt :id :balance))
          (into (sorted-map)))))
 
-(defrecord YSQLBankYbClient [allow-negatives? isolation]
+(defrecord InternalClient [allow-negatives? isolation]
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
@@ -62,15 +62,14 @@
   (teardown-cluster! [this test c conn-wrapper]
     (c/drop-table c table-name)))
 
-
-(c/defclient YSQLBankClient YSQLBankYbClient)
+(c/defclient Client InternalClient)
 
 
 ;
 ; Multi-table bank test
 ;
 
-(defrecord YSQLMultiBankYbClient [allow-negatives? isolation]
+(defrecord InternalMultiClient [allow-negatives? isolation]
   c/YSQLYbClient
 
   (setup-cluster! [this test c conn-wrapper]
@@ -130,4 +129,4 @@
       (c/drop-table c (str table-name a)))))
 
 
-(c/defclient YSQLMultiBankClient YSQLMultiBankYbClient)
+(c/defclient MultiClient InternalMultiClient)
