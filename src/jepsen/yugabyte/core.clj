@@ -2,11 +2,11 @@
   "Integrates workloads, nemeses, and automation to construct test maps."
   (:require [clojure.tools.logging :refer :all]
             [clojure.string :as str]
-            [jepsen [checker :as checker] 
+            [jepsen [checker :as checker]
              [generator :as gen]
              [random :as random]
              [tests :as tests]
-             [sql :as sql]] 
+             [sql :as sql]]
             [jepsen.os.debian :as debian]
             [jepsen.os.centos :as centos]
             [jepsen.yugabyte
@@ -42,7 +42,7 @@
              [append        :as ysql.append]
              [append-table  :as ysql.append-table]
              [bank :as ysql.bank]
-             [bank-improved :as ysql.bank-improved] 
+             [bank-improved :as ysql.bank-improved]
              [client        :as ysql.client]
              [counter :as ysql.counter]
              [default-value :as ysql.default-value]
@@ -59,32 +59,6 @@
 
 (def version-regex #"(?<=yugabyte\-)(\d+\.\d+(\.\d+){0,2}(-b\d+)?)")
 
-(defn noop-test
-  "NOOP test, exists to validate setup/teardown phases"
-  [opts]
-  (merge tests/noop-test opts))
-
-(defn sleep-test
-  "NOOP test that gives you time to log into nodes and poke around, trying stuff manually.
-  Sleeps for durations specified by --time-limit (in seconds), defaults to 60."
-  [opts]
-  (merge tests/noop-test
-         {:client (reify Client
-                    (setup! [this test]
-                      (let [wait-sec (:time-limit opts)]
-                        (info "Sleeping for" wait-sec "s...")
-                        (Thread/sleep (long (* wait-sec 1000)))))
-                    (teardown! [this test])
-                    (invoke! [this test op] (assoc op :type :ok))
-                    (open! [this test node] this)
-                    (close! [this test]))}
-         opts))
-
-(defn is-stub-workload
-  "Whether workload defined by the given keyword is just a stub, or is a real one"
-  [w]
-  (or (= (name w) "none") (= (name w) "sleep")))
-
 (defmacro with-client
   [workload client-ctor]
   "Wraps a workload function to add :client entry to the result.
@@ -93,8 +67,7 @@
 
 (def workloads-ycql
   "A map of workload names to functions that can take option maps and construct workloads."
-  #:ycql{:none            noop-test
-         :counter         (with-client counter/workload (ycql.counter/->CQLCounterClient))
+  #:ycql{:counter         (with-client counter/workload (ycql.counter/->CQLCounterClient))
          :set             (with-client set/workload (ycql.set/->CQLSetClient))
          :set-index       (with-client set/workload (ycql.set/->CQLSetIndexClient))
          :bank            (with-client bank/workload-allow-neg (ycql.bank/->CQLBank))
@@ -113,9 +86,7 @@
 
 (def workloads-ysql
   "A map of workload names to functions that can take option maps and construct workloads."
-  #:ysql{:none               noop-test
-         :sleep              sleep-test
-         :sz.counter         (with-client counter/workload (ysql.counter/->YSQLCounterClient :serializable))
+  #:ysql{:sz.counter         (with-client counter/workload (ysql.counter/->YSQLCounterClient :serializable))
          :sz.set             (with-client set/workload (ysql.set/->YSQLSetClient :serializable))
          ; This one doesn't work because of https://github.com/YugaByte/yugabyte-db/issues/1554
          ; :set-index       (with-client set/workload (ysql.set/->YSQLSetIndexClient))
@@ -197,9 +168,6 @@
   test-all."
   (-> workload-options
       (dissoc :ycql/bank-multitable
-              :ycql/none
-              :ysql/none
-              :ysql/sleep
               :ysql/append-table)))
 
 (def nemesis-specs
@@ -383,13 +351,11 @@
                             :start      #{:start-partition}
                             :stop       #{:stop-partition}
                             :fill-color "#888888"}}})
-        checker (if (is-stub-workload (:workload opts))
-                  (:checker workload)
-                  (checker/compose {:perf                 perf
-                                    :stats                (checker/stats)
-                                    :unhandled-exceptions (checker/unhandled-exceptions)
-                                    :clock                (checker/clock-plot)
-                                    :workload             (:checker workload)}))]
+        checker (checker/compose {:perf                 perf
+                                  :stats                (checker/stats)
+                                  :unhandled-exceptions (checker/unhandled-exceptions)
+                                  :clock                (checker/clock-plot)
+                                  :workload             (:checker workload)})]
     (merge tests/noop-test
            opts
            (dissoc workload
