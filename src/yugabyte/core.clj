@@ -9,12 +9,12 @@
             [jepsen.os.debian :as debian]
             [jepsen.os.centos :as centos]
             [yugabyte [append :as append]
-             [default-value :as default-value]
-             [wr :as wr]
-             [upsert :as upsert]
-             [types :as types]
-             [g2 :as g2]
-             [monotonic :as monotonic]]
+                      [default-value :as default-value]
+                      [wr :as wr]
+                      [upsert :as upsert]
+                      [types :as types]
+                      [g2 :as g2]
+                      [monotonic :as monotonic]]
             [yugabyte.auto :as auto]
             [yugabyte.bank :as bank]
             [yugabyte.bank-improved :as bank-improved]
@@ -36,14 +36,15 @@
             [yugabyte.ycql.upsert]
             [yugabyte.ycql.types]
             [yugabyte.ycql.monotonic]
-            [yugabyte.ysql [append :as ysql.append]
-             [append-table :as ysql.append-table]
-             [default-value :as ysql.default-value]
-             [wr :as ysql.wr]
-             [upsert :as ysql.upsert]
-             [types :as ysql.types]
-             [g2 :as ysql.g2]
-             [monotonic :as ysql.monotonic]]
+            [yugabyte.ysql [append        :as ysql.append]
+                           [append-table  :as ysql.append-table]
+                           [client        :as ysql.client]
+                           [default-value :as ysql.default-value]
+                           [wr            :as ysql.wr]
+                           [upsert        :as ysql.upsert]
+                           [types         :as ysql.types]
+                           [g2            :as ysql.g2]
+                           [monotonic     :as ysql.monotonic]]
             [yugabyte.ysql.bank]
             [yugabyte.ysql.bank-improved]
             [yugabyte.ysql.counter]
@@ -168,15 +169,25 @@
          :si.monotonic       (with-client monotonic/workload (ysql.monotonic/->Client :repeatable-read))
          :rc.monotonic       (with-client monotonic/workload (ysql.monotonic/->Client :read-committed))})
 
+(def workloads-jsql
+  "Workloads from jepsen.sql"
+  (update-keys (jepsen.sql/workloads
+                 {:open ysql.client/open
+                  :error-fn ysql.client/error-fn})
+               (fn [k] (keyword "jsql" (name k)))))
+
 (def workloads
-  (merge workloads-ycql workloads-ysql))
+  "All workloads: a map of keywords to workload-constructing functions."
+  (merge workloads-ycql
+         workloads-ysql
+         workloads-jsql))
 
 (def workload-options
   "For each workload, a map of workload options to all the values that option
   supports. Used for test-all."
-  ; If we ever need additional options - merge them onto this base set
-  (merge (map-values workloads-ycql (fn [_] {}))
-         (map-values workloads-ysql (fn [_] {}))))
+  (merge (map-values workloads-ycql   (constantly {}))
+         (map-values workloads-ysql   (constantly {}))
+         (map-values workloads-jsql   (constantly {}))))
 
 (def workload-options-expected-to-pass
   "Only workloads and options that we think should pass. Also used for
@@ -234,8 +245,8 @@
   {:ssh {:port                     54422
          :strict-host-key-checking false
          :username                 "yugabyte"
-         :private-key-path         (str (System/getenv "HOME")
-                                        "/.yugabyte/yugabyte-dev-aws-keypair.pem")}})
+         :private-key-path (str (System/getenv "HOME")
+                                "/.yugabyte/yugabyte-dev-aws-keypair.pem")}})
 
 (def trace-logging
   "Logging configuration for the test which sets up traces for queries."
@@ -271,14 +282,17 @@
   "Initial test construction from a map of CLI options. Establishes the test
   name, OS, DB."
   [opts]
-  (let [api (keyword (namespace (:workload opts)))
+  (let [api (case (namespace (:workload opts))
+              "ysql" :ysql
+              "ycql" :ycql
+              ; The jepsen.sql tests use the ysql API
+              "jsql" :ysql)
         url-version (when-let [url (:url opts)]
                       (first (re-find version-regex url)))]
     (when (and (= :ycql api) (:connection-manager opts))
       (warn "Connection manager is a YSQL-only feature; disabling it for YCQL workload"
             (:workload opts)))
     (assoc opts
-      :version (or url-version (:version opts))
       :api api
       ; Serializable workloads conflict heavily; run them with fewer worker
       ; threads (~half) so contention doesn't drown out useful throughput.
@@ -292,6 +306,19 @@
       ; Connection manager (YSQL Connection Manager / Odyssey) only applies to
       ; YSQL. Never enable it for YCQL tests, regardless of the CLI flag.
       :connection-manager (and (not= :ycql api) (:connection-manager opts))
+      :db (auto/->YugaByteDB)
+
+      :expected-consistency-model
+      (or (:expected-consistency-model opts)
+          (case (:isolation opts)
+            ; The existing tests add realtime edges to the graph, so we'll
+            ; expect the strong variants of each isolation level. "repeatable
+            ; read" in YB is actually, IIRC, Strong SI.
+            :read-uncommitted :strong-read-uncommitted
+            :read-committed   :strong-read-committed
+            :repeatable-read  :strong-snapshot-isolation
+            :serializable     :strong-serializable))
+
       :name (str "yb_" (-> (or (:url opts) (:version opts))
                            (str/split #"/")
                            (last))
@@ -303,11 +330,10 @@
                                          (map name)
                                          sort
                                          (str/join ",")))))
-      :pure-generators true
       :os (case (:os opts)
             :centos centos/os
             :debian debian/os)
-      :db (auto/->YugaByteDB))))
+      :version (or url-version (:version opts)))))
 
 (defn test-2
   "Second phase of test construction. Builds the workload and nemesis, and
@@ -325,6 +351,9 @@
                           (gen/log "Waiting for recovery...")
                           (gen/sleep (:final-recovery-time opts))
                           (gen/clients (:final-generator workload)))
+              gen)
+        gen (if-let [wrap (:wrap-generator workload)]
+              (wrap gen)
               gen)
         perf (checker/perf
                {:nemeses #{{:name       "kill master"
@@ -375,9 +404,13 @@
 (defn test-3
   "Final phase where we define global cluster configuration parameters"
   [opts]
-  (let [packed-columns-enabled (random/bool)
+  (let [; TODO: <sigh> not sure why they're doing random choices here; I assume
+        ; these should be CLI parameters.
+        packed-columns-enabled (random/bool)
         colocated (and (not (utils/is-test-geo-partitioned? opts)) (random/bool))]
-    (assoc opts :yb-packed-columns-enabled packed-columns-enabled :yb-colocated colocated)))
+    (assoc opts
+           :yb-packed-columns-enabled packed-columns-enabled
+           :yb-colocated colocated)))
 
 (defn yb-test
   "Constructs a yugabyte test from CLI options."

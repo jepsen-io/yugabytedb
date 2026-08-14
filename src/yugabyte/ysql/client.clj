@@ -17,7 +17,20 @@
 
 (def default-timeout "Default timeout for operations in ms" 30000)
 
-(def conn-isolation-level "Default isolation level for connections"
+(def dbname
+  "The default DB name"
+  "jepsen")
+
+(def user
+  "The default username"
+  "jepsen")
+
+(def password
+  "The default password"
+  "jepsen")
+
+(def conn-isolation-level
+  "Default isolation level for connections"
   Connection/TRANSACTION_SERIALIZABLE)
 
 (defn ysql-port
@@ -26,10 +39,12 @@
     5431
     5433))
 
-(def max-retry-attempts "Maximum number of attempts to be performed by with-retry" 30)
-(def max-delay-between-retries-ms "Maximum delay between retries for with-retry" 200)
-
-
+(def max-retry-attempts
+  "Maximum number of attempts to be performed by with-retry"
+  30)
+(def max-delay-between-retries-ms
+  "Maximum delay between retries for with-retry"
+  200)
 
 (defn db-spec
   "Assemble a JDBC connection specification for a given Jepsen node."
@@ -136,6 +151,11 @@
                           nil))
                       (recur)))))
 
+(defn open
+  "Given a test and node, opens a next.jdbc connection to it."
+  [test node]
+  (open-conn dbname user password node (ysql-port test)))
+
 (defn close-conn
   "Given a JDBC connection, closes it and returns the underlying spec."
   [conn]
@@ -180,7 +200,7 @@
   (rc/open!
     (rc/wrapper
       {:name  node
-       :open  (partial open-conn "jepsen" "jepsen" "jepsen" node (ysql-port test))
+       :open  (partial open test node)
        :close close-conn
        ; Do not log intermediate reconnection errors (if the reconnect fails, we'll still get it)
        :log?  false})))
@@ -195,111 +215,146 @@
     "Called once on a random node to tear down the client/database/cluster when work is complete.
     If it throws retryable error, can be called again."))
 
-(defn exception-to-op
-  "Takes an exception and maps it to a partial op, like {:type :info, :error
-  ...}. nil if unrecognized."
+(defn error-fn
+  "Takes an Exception thrown by the YugaByte SQL client and returns an error
+  map for it, or nil if unrecognized."
   [e]
   (when-let [m (.getMessage e)]
     (condp instance? e
       java.sql.SQLTransactionRollbackException
-      {:type :fail, :error [:rollback m]}
+      {:type :rollback
+       :msg m
+       :definite? true}
 
-      ; So far it looks like all SQL exception are wrapped in BatchUpdateException
+      ; So far it looks like all SQL exception are wrapped in
+      ; BatchUpdateException
       java.sql.BatchUpdateException
       (if (re-find #"getNextExc" m)
         ; Wrap underlying exception error with [:batch ...]
-        (when-let [op (exception-to-op (.getNextException e))]
-          (update op :error (partial vector :batch)))
-        {:type :info, :error [:batch-update m]})
+        (when-let [err-map (error-fn (.getNextException e))]
+          (update err-map :type (partial vector :batch)))
+        {:type [:batch-update m]})
 
       com.yugabyte.util.PSQLException
       (condp re-find m
         #"(?i)Conflicts with [- a-z]+ transaction"
-        {:type :fail, :error [:conflicting-transaction m]}
+        {:type :conflicting-transaction
+         :msg m
+         :definite? true}
 
         #"(?i)Catalog Version Mismatch"
-        {:type :fail, :error [:catalog-version-mismatch m]}
+        {:type :catalog-version-mismatch
+         :msg m
+         :definite? true}
 
         ; This type of error can, on occasion, be indeterminate: the
         ; transaction may have actually committed.
         #"(?i)Operation expired"
-        {:type :info, :error [:operation-expired m]}
+        {:type :operation-expired
+         :msg m}
 
         ; Happens upon network partition,
         ; usually invoked upon RPC request timeout
         #"(?i)Timed out after deadline expired"
-        {:type :info, :error [:timeout m]}
+        {:type :timeout
+         :msg m}
 
         ; Happens when tserver has been stopped,
-        ; invoked from PG backend via ProcessInterrupts as a part of CHECK_FOR_INTERRUPTS macro
+        ; invoked from PG backend via ProcessInterrupts as a part of
+        ; CHECK_FOR_INTERRUPTS macro
         #"(?i)Terminating connection due to administrator command"
-        {:type :fail, :error [:conn-closed m]}
+        {:type :conn-closed
+         :msg m
+         :definite? true}
 
         ; Happens when transaction conflict detected
         #"(?i)try again"
-        {:type :fail, :error [:try-again m], :retryable? true}
+        {:type :try-again
+         :msg m
+         :definite? true
+         :retryable? true}
 
-        ; Happens when server can't determine whether the value was written before or
-        ; after transaction start
+        ; Happens when server can't determine whether the value was written
+        ; before or after transaction start
         #"(?i)restart read required"
-        {:type :fail, :error [:restart-read-required m], :retryable? true}
+        {:type :restart-read-required
+         :msg m
+         :definite? true
+         :retryable? true}
 
-        ;
-        ; PG driver-level errors
-        ; Happens when client connection with yb-tserver has been disrupted
-        ; (usually results in operation failure, but we can't guarantee that)
-        ;
+        ;; PG driver-level errors
+        ;; Happens when client connection with yb-tserver has been disrupted
+        ;; (usually results in operation failure, but we can't guarantee that)
 
         ; Might happen on basically any stage
         #"(?i)This connection has been closed"
-        {:type :info, :error [:conn-closed m]}
+        {:type :conn-closed
+         :msg m}
 
         ; Happens when there's a problem communicating with server
         #"(?i)An I/O error occurred while sending to the backend"
-        {:type :info, :error [:data-sending-failed m]}
+        {:type :data-sending-failed
+         :msg m}
 
-        ;
-        ; Errors in test spec, do not suppress throwing
-        ;
+        ;; Errors in test spec, do not suppress throwing
 
         #"(?i)Syntax error"
-        nil
+        {:type      :syntax-error
+         :msg       m
+         :definite? true
+         :critical? true}
 
         #"(?i)Column .+ does not exist"
-        nil
+        {:type      :column-not-found
+         :msg       m
+         :critical? true
+         :definite? true}
 
         ; Unknown (other) SQL error
-        {:type :info, :error [:psql-exception m]})
+        {:type :psql-exception
+         :msg m})
 
       clojure.lang.ExceptionInfo
       (if-let [e2 (:rollback (ex-data e))]
-        ; Process wrapped exception, if any - happens e.g. when tserver has been stopped
-        (exception-to-op e2)
+        ; Process wrapped exception, if any
+        (error-fn e2)
 
-        ; Happens when with-conn macro detects a closed connection
-        (condp = (:type (ex-data e))
-          :conn-not-ready {:type :fail, :error :conn-not-ready}
-          nil))
+        ; Happens when with-conn macro detects a closed connectio
+        (let [data (ex-data e)]
+          (case (:type data)
+            :conn-not-ready (assoc data :definite? true)
+            nil)))
 
       (condp re-find m
         #"^timeout$"
-        {:type :info, :error :timeout}
+        {:type :timeout, :msg m}
 
         #"timed out"
-        {:type :info, :error :timeout}
+        {:type :timeout, :msg m}
 
         nil))))
+
+
+(defn exception-to-op
+  "Takes an exception and maps it to a partial op, like {:type :info, :error
+  ...}. nil if unrecognized."
+  [e]
+  (when-let [err-map (error-fn e)]
+    (cond-> {:type (if (:definite? err-map)
+                     :fail
+                     :info)
+             :error err-map}
+      (:retryable? err-map) (assoc :retryable? true))))
 
 (defn retryable?
   "Whether given exception indicates that an operation can be retried"
   [ex]
-  (let [op (exception-to-op ex)]                            ; either {:type ... :error ...} or nil
-    (= (:retryable? op) true)))
+  (boolean (:retryable? (error-fn ex))))
 
 (defmacro once-per-cluster
-  "Runs the given code once per cluster. Requires an atomic boolean (set to false)
-  shared across clients.
-  This is needed mainly because concurrent DDL is not supported and results in an error."
+  "Runs the given code once per cluster. Requires an atomic boolean (set to
+  false) shared across clients. This is needed mainly because concurrent DDL is
+  not supported and results in an error."
   [atomic-bool & body]
   `(locking ~atomic-bool
      (when (compare-and-set! ~atomic-bool false true) ~@body)))
