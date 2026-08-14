@@ -483,8 +483,7 @@
   "Pessimistic specific flags"
   [test]
   (if (utils/is-test-has-pessimistic-locs? test)
-    [:--enable_wait_queues
-     :--enable_deadlock_detection]
+    [:--enable_wait_queues]
     []))
 
 
