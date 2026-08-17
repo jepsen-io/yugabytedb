@@ -1,4 +1,12 @@
 (ns jepsen.yugabyte.upsert
+  ; aphyr, 2028-08-17: Wait, the whole point of an upsert test is to upsert,
+  ; but this says it uses ON CONFLICT DO NOTHING, which is *not* an upsert! Is
+  ; this now an insert test? TODO: figure out what exactly happened here.
+  ;
+  ; I swear, the number of hours I waste trying to untangle other people's use
+  ; of Claude. Did no one even look at this? It did all its writes to just 20
+  ; hardcoded keys, so after the first handful of operations nothing should
+  ; have ever succeeded.
   "Concurrent INSERT ... ON CONFLICT DO NOTHING against a small, contended key
   space. Each :upsert reports whether it actually inserted a row. Because the
   primary key makes at most one insert win per key (and DO NOTHING never
@@ -13,19 +21,16 @@
   (:require [jepsen.checker :as checker]
             [jepsen.generator :as gen]))
 
-(def key-count
-  "Small key space so upserts contend heavily."
-  20)
-
 (defn upserts
   []
-  (->> (range)
-       (map (fn [i] {:type :invoke, :f :upsert, :value [(mod i key-count) i]}))
-       (map gen/once)))
+  (->> (for [k        (range)
+             ; Try five upserts per key
+             attempt (range 5)]
+         (->> {:f :upsert, :value [k attempt]}))))
 
 (defn reads
   []
-  {:type :invoke, :f :read, :value nil})
+  (gen/repeat {:f :read}))
 
 (defn checker
   []
@@ -54,7 +59,8 @@
 
 (defn workload
   [opts]
-  (let [threads (:concurrency opts)]
-    {:generator (->> (gen/reserve (quot threads 2) (upserts) (repeat (reads)))
-                     (gen/stagger (/ 1 threads)))
-     :checker   (checker)}))
+  (let [c (or (:concurrency opts)
+              (* 2 (count (:nodes opts))))]
+    {:concurrency c
+     :generator   (gen/reserve (quot c 2) (upserts) (reads))
+     :checker     (checker)}))

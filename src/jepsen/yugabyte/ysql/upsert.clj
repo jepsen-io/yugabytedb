@@ -24,7 +24,8 @@
         sql        (if use-index?
                      (str "/*+ IndexOnlyScan(" table-name " " index-name ") */ "
                           "select k, v from " table-name
-                          " where k2 in (" (str/join ", " (range upsert/key-count)) ")")
+                          ;" where k2 in (" (str/join ", " (range upsert/key-count)) ")"
+                          )
                      (str "select k, v from " table-name))]
     (->> (c/query conn [sql])
          (map (juxt :k :v))
