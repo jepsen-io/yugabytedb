@@ -8,22 +8,11 @@
             [jepsen.tests.cycle.append :as append]))
 
 (defn workload
-  "A workload for a standard append test, with each list stored in a separate
-  row."
+  "A workload for a list-append test."
   [opts]
-  (append/test (assoc
-                 (select-keys opts [:key-count
-                                    :max-txn-length
-                                    :max-writes-per-key])
-                :consistency-models [(:expected-consistency-model opts)])))
-
-
-(defn workload-table
-  "A workload for a table-based append test, where each list is a table, and
-  each element a row."
-  [opts]
-  (append/test (assoc
-                 (select-keys opts [:key-count
-                                    :max-txn-length
-                                    :max-writes-per-key])
-                 :consistency-models [(:expected-consistency-model opts)])))
+  (-> (assoc
+        (select-keys opts [:key-count
+                           :max-txn-length
+                           :max-writes-per-key])
+        :consistency-models [(:expected-consistency-model opts)])
+      append/test))

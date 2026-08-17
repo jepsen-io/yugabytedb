@@ -85,7 +85,9 @@
   "A map of workload names to functions that can take option maps and construct workloads."
   (workloads-builder
     :ycql
-    [:bank            bank/workload-allow-neg             (ycql.bank/->Client)
+    [; YCQL can't do reads or conditional writes in transactions, so we have to
+     ; allow negative balances.
+     :bank            bank/workload-allow-neg             (ycql.bank/->Client)
      :bank-inserts    bank-improved/workload-with-inserts (ycql.bank-improved/->Client)
      :bank-multitable bank/workload-allow-neg             (ycql.bank/->MultiClient)
      :counter         counter/workload                    (ycql.counter/->Client)
@@ -103,7 +105,7 @@
   (workloads-builder
     :ysql
     [:append          append/workload                        (ysql.append/->Client)
-     :append-table    append/workload-table                  (ysql.append-table/->Client)
+     :append-table    append/workload                        (ysql.append-table/->Client)
      :bank            bank/workload-allow-neg                (ysql.bank/->Client true)
      :bank-contention bank-improved/workload-contention-keys (ysql.bank-improved/->Client)
      :bank-multitable bank/workload-allow-neg                (ysql.bank/->Client true)
@@ -338,13 +340,13 @@
            (dissoc workload
                    :generator
                    :final-generator
+                   :wrap-generator
                    :checker)
            (when (:yugabyte-ssh opts) (yugabyte-ssh-defaults))
            (when (:trace-cql opts) (trace-logging))
            {:client          (:client workload)
             :nemesis         (:nemesis nemesis)
             :generator       gen
-            :pure-generators true
             :checker         checker})))
 
 (defn test-3

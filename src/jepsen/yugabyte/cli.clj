@@ -61,6 +61,12 @@
      [nil "--heartbeat-flags" "Enable heartbeat tserver tracing flags on YB"
       :default false]
 
+     ; Because many of our workloads have specific concurrency requirements, we
+     ; let the workloads themselves fill in defaults.
+     [nil "--concurrency NUMBER" "How many workers should we run? Must be an integer, optionally followed by n (e.g. 3n) to multiply by the number of nodes."
+      :validate [(partial re-find #"^\d+n?$")
+                 "Must be an integer, optionally followed by n."]]
+
      [nil "--connection-manager" "Enable connection manager flags on YB since 2024.2 version"
       :default false]
 

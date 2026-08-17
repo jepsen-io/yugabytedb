@@ -25,6 +25,8 @@
 (def start-key 0)
 (def end-key 5)
 
+; aphyr: 2026-08-17: uhhhhh, this feels like it's going to break when you run
+; more than one test
 (def insert-key-ctr (atom (inc end-key)))
 (def contention-keys (range end-key (+ end-key 3)))
 
