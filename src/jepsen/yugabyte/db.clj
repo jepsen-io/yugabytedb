@@ -490,13 +490,6 @@
       [:--time_source (format "skewed,%s" (- host-skew half-skew))])
     []))
 
-(defn master-tserver-wait-on-conflict-flags
-  "Pessimistic specific flags"
-  [test]
-  (if (utils/is-test-has-pessimistic-locs? test)
-    [:--enable_wait_queues]
-    []))
-
 
 (defn tserver-connection-manager-preview
   "Preview flags for connection manager feature"
@@ -757,7 +750,6 @@
                :--replication_factor (:replication-factor test)
                (master-tserver-experimental-tuning-flags test)
                (master-tserver-random-clock-skew test node)
-               (master-tserver-wait-on-conflict-flags test)
                (master-tserver-packed-columns test)
                (master-tserver-geo-partitioning-flags test node (:nodes test))
                (master-tserver-stress-flags test)
@@ -782,7 +774,6 @@
                :--rpc_slow_query_threshold_ms 1000
                (master-tserver-experimental-tuning-flags test)
                (master-tserver-random-clock-skew test node)
-               (master-tserver-wait-on-conflict-flags test)
                (master-tserver-packed-columns test)
                (master-tserver-geo-partitioning-flags test node (:nodes test))
                (master-tserver-stress-flags test)
