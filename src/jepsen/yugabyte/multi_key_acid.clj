@@ -54,15 +54,14 @@
 
 (defn workload
   [opts]
-  (let [n (count (:nodes opts))
-        threads (:concurrency opts)]
-    {:generator (independent/concurrent-generator
-                  (/ threads 2)
+  (let [n (count (:nodes opts))]
+    {:concurrency (* 8 n)
+     :generator (independent/concurrent-generator
+                  (* 2 n)
                   (range)
                   (fn [k]
-                    (->> (gen/reserve (/ threads 4) r w)
-                         (gen/stagger 1)
-                         (gen/process-limit threads))))
+                    (->> (gen/reserve n r w)
+                         (gen/process-limit 12))))
      :checker   (independent/checker
                   (checker/compose
                     {:timeline (timeline/html)

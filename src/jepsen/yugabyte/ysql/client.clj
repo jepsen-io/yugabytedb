@@ -67,7 +67,7 @@
   commented op-index will be appended to a first element."
   [op sql]
   (if (sequential? sql)
-    (concat [(append-op-index op (first sql))] (rest sql))
+    (update sql 0 (partial append-op-index op))
     (str sql " /* :op-index " (:index op) " */ ")))
 
 (defn query
@@ -86,14 +86,16 @@
    (j/insert! conn table values {:timeout default-timeout})))
 
 (defn update!
-  "Like jdbc update!, but includes a default timeout and (optionally) :op-index comment."
+  "Like jdbc update!, but includes a default timeout and (optionally) :op-index
+  comment."
   ([op conn table values where]
    (update! conn (append-op-index op table) values where))
   ([conn table values where]
    (j/update! conn table values where {:timeout default-timeout})))
 
 (defn execute!
-  "Like jdbc execute!, but includes a default timeout and (optionally) :op-index comment."
+  "Like jdbc execute!, but includes a default timeout and (optionally)
+  :op-index comment."
   ([op conn sql-params]
    ;(info sql-params)
    (execute! conn (append-op-index op sql-params)))

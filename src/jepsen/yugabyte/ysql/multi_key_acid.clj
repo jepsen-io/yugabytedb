@@ -1,5 +1,7 @@
 (ns jepsen.yugabyte.ysql.multi-key-acid
-  "This test uses INSERT ... ON CONFLICT DO UPDATE"
+  "Read-write register transactions, implemented as a single table of keys to
+  values. The first key, k1, denotes a object; the second, k2, is the key
+  within that object."
   (:require [clojure.java.jdbc :as j]
             [clojure.tools.logging :refer [info]]
             [jepsen.independent :as independent]
@@ -42,16 +44,14 @@
         (c/with-txn test c
           (doseq [[f k1 v] ops]
             (assert (= :w f))
-            ; Since there's no UPSERT for SQL...
-            (let [update-str (str "INSERT INTO " table-name " (k1, k2, val)"
-                                  " VALUES (" k1 ", " k2 ", " v ")"
-                                  " ON CONFLICT ON CONSTRAINT " table-name "_pkey"
-                                  " DO UPDATE SET val = " v)]
-              (c/execute! op c update-str)))
+              (c/execute! op c
+                  (str "INSERT INTO " table-name " (k1, k2, val)"
+                       " VALUES (" k1 ", " k2 ", " v ")"
+                       " ON CONFLICT ON CONSTRAINT " table-name
+                       "_pkey DO UPDATE SET val = " v)))
           (assoc op :type :ok)))))
 
   (teardown-cluster! [this test c conn-wrapper]
     (c/drop-table c table-name)))
-
 
 (c/defclient Client InternalClient)

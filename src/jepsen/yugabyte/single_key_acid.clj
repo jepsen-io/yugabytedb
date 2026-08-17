@@ -22,23 +22,22 @@
             [knossos.model :as model]
             [jepsen.checker.timeline :as timeline]))
 
-(def keys-count 2)
-
 (defn r [_ _] {:type :invoke, :f :read, :value nil})
-(defn w [_ _] {:type :invoke, :f :write, :value (random/long keys-count)})
-(defn cas [_ _] {:type :invoke, :f :cas, :value [(random/long keys-count) (random/long keys-count)]})
+(defn w [_ _] {:type :invoke, :f :write, :value (random/long 5)})
+(defn cas [_ _] {:type :invoke, :f :cas, :value [(random/long 5)
+                                                 (random/long 5)]})
 
 (defn workload
   [opts]
-  (let [n (count (:nodes opts))
-        threads (:concurrency opts)]
-    {:generator (independent/concurrent-generator
-                  (/ threads keys-count)
-                  (cycle (range keys-count))
+  (let [n (count (:nodes opts))]
+    {:concurrency (* 8 n)
+     :generator (independent/concurrent-generator
+                  (* 2 n)
+                  (range)
                   (fn [k]
-                    (->> (gen/reserve (/ threads (* 2 keys-count)) (gen/mix [w cas cas]) r)
-                         (gen/stagger 1)
-                         (gen/process-limit threads))))
+                    (->> (gen/reserve n r
+                                      (gen/mix [w cas cas]))
+                         (gen/process-limit 12))))
      :checker   (independent/checker
                   (checker/compose
                     {:timeline (timeline/html)

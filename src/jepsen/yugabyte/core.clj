@@ -337,6 +337,9 @@
            (when (:yugabyte-ssh opts) (yugabyte-ssh-defaults))
            (when (:trace-cql opts) (trace-logging))
            {:client          (:client workload)
+            :concurrency     (or (:concurrency opts)
+                                 (:concurrency workload)
+                                 (* 2 (count (:nodes opts))))
             :nemesis         (:nemesis nemesis)
             :generator       gen
             :checker         checker})))
