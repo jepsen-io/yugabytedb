@@ -189,7 +189,8 @@
   "A command that runs a whole suite of tests in one go."
   []
   {"test-all"
-   {:opt-spec (concat cli/test-opt-spec cli-opts test-all-opts)
+   {:opt-spec (cli/merge-opt-specs cli/test-opt-spec
+                                   (concat cli-opts test-all-opts))
     :opt-fn   cli/test-opt-fn
     :usage    "Runs all tests"
     :run      (fn [{:keys [options]}]
