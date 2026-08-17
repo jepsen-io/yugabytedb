@@ -117,10 +117,10 @@
      :multi-key-acid  multi-key-acid/workload                (ysql.multi-key-acid/->Client)
      :set             set/workload                           (ysql.set/->Client)
      :set-index       set/workload                           (ysql.set/->IndexClient)
-     :single-key-acid single-key-acid/workload               (ysql.single-key-acid/->Client)]))
+     :single-key-acid single-key-acid/workload               (ysql.single-key-acid/->Client)
      :types           types/workload                         (ysql.types/->Client)
      :upsert          upsert/workload                        (ysql.upsert/->Client)
-     :wr              wr/workload                            (ysql.wr/->Client)
+     :wr              wr/workload                            (ysql.wr/->Client)]))
 
 (def workloads-jsql
   "Workloads from jepsen.sql"

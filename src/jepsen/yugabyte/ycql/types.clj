@@ -41,7 +41,7 @@
               rows       (if use-index?
                            (c/select conn table
                                      :columns [:k :v]
-                                     :where [[:in :k2 (range types/key-count)]])
+                                     :where [[:in :k2 (range (count types/special-values))]])
                            (c/select conn table :columns [:k :v]))
               m          (->> rows
                               (map (fn [r] [(:k r) (some-> (:v r) long)]))

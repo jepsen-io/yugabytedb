@@ -1,14 +1,12 @@
 (ns jepsen.yugabyte.types
   "Writes numeric boundary values into a bigint column and reads them back,
-  checking every value read for a key was actually written for that key. Catches
-  overflow / truncation / precision corruption (e.g. a value silently narrowed
-  to 32 bits). Isolation-independent, so meaningful at read-committed and
-  snapshot as well as serializable."
-  (:require [jepsen.checker :as checker]
-            [jepsen.generator :as gen]))
+  checking to make sure that they round-tripped correctly."
+  (:require [jepsen [checker :as checker]
+                    [history :as h]
+                    [generator :as gen]]))
 
-(def boundary-values
-  "Edge-case 64-bit integers: zero/±1, 32-bit boundaries, and 64-bit extremes."
+(def special-values
+  "A variety of interesting 64-bit integers."
   [0 1 -1
    2147483647            ; Integer/MAX_VALUE
    2147483648            ; Integer/MAX_VALUE + 1
@@ -18,48 +16,40 @@
    9223372036854775807   ; Long/MAX_VALUE
    -9223372036854775808]) ; Long/MIN_VALUE
 
-(def key-count 8)
-
 (defn writes
+  "For each special value with index `i`, writes that value to key `i` until
+  successful."
   []
-  (->> (range)
-       (map (fn [i]
-              {:type  :invoke
-               :f     :write
-               :value [(mod i key-count)
-                       (nth boundary-values (mod i (count boundary-values)))]}))
-       (map gen/once)))
+  (map-indexed (fn [i v]
+                 (gen/until-ok {:f :write, :value [i v]}))
+               special-values))
 
 (defn reads
   []
-  {:type :invoke, :f :read, :value nil})
+  "On each thread, a single ok read."
+  (gen/each-thread (gen/until-ok {:f :read})))
 
 (defn checker
   []
   (reify checker/Checker
     (check [_ test history _]
-      (let [oks     (filter #(= :ok (:type %)) history)
-            written (reduce (fn [m op]
-                              (if (= :write (:f op))
-                                (let [[k v] (:value op)]
-                                  (update m k (fnil conj #{}) v))
-                                m))
-                            {} oks)
-            errs    (for [op    oks
-                          :when (= :read (:f op))
-                          [k v] (:value op)
-                          :when (not (contains? (get written k #{}) v))]
-                      {:key k, :read v, :written (get written k #{})})]
-        {:valid?     (empty? errs)
-         :corruption (vec errs)}))))
+      (let [errs (->> history
+                      h/oks
+                      (h/filter (h/has-f? :read))
+                      (mapcat
+                        (fn [{:keys [value] :as op}]
+                          (filter (fn [[k v]]
+                                    (let [expected (nth special-values k)]
+                                      (when (not= expected v)
+                                        {:key k
+                                         :expected expected
+                                         :actual v
+                                         :op op})))
+                                  value))))]
+        {:valid? (empty? errs)
+         :errs   (vec errs)}))))
 
 (defn workload
   [opts]
-  (let [threads (:concurrency opts)]
-    {:generator (->> (gen/reserve (quot threads 2) (writes)
-                                  (repeat (reads)))
-                     ; aphyr, 2028-08-14: why is this delayed at all? This was
-                     ; a regression test for a specific serialization/storage
-                     ; issues; it shouldn't be (!?) dependent on rate.
-                     (gen/stagger (/ 1 threads)))
-     :checker   (checker)}))
+  {:generator [(writes) (reads)]
+   :checker   (checker)})

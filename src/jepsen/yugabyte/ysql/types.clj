@@ -17,13 +17,16 @@
 (def index-name "idx_types")
 
 (defn read-all
-  "Reads all rows as a {k (long v)} map, via full scan or index-only scan on k2."
+  "Reads all rows as a {k (long v)} map, via full scan or index-only scan on
+  k2."
   [conn]
   (let [use-index? (zero? (random/long 2))
         sql        (if use-index?
                      (str "/*+ IndexOnlyScan(" table-name " " index-name ") */ "
                           "select k, v from " table-name
-                          " where k2 in (" (str/join ", " (range types/key-count)) ")")
+                          " where k2 in ("
+                          (str/join ", " (range (count types/special-values)))
+                          ")")
                      (str "select k, v from " table-name))]
     (->> (c/query conn [sql])
          (map (fn [r] [(:k r) (some-> (:v r) long)]))

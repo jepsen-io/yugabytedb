@@ -17,6 +17,7 @@
   [opts]
   (let [c (or (:concurrency opts)
               (* 2 (count (:nodes opts))))]
-    {:generator (gen/reserve (/ c 2) (adds)
+    {:concurrency c
+     :generator (gen/reserve (/ c 2) (adds)
                              reads)
      :checker   (checker/set-full)}))
