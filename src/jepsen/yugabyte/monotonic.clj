@@ -26,9 +26,10 @@
 
 (defn workload
   [opts]
-  (let [threads (:concurrency opts)]
-    {:generator (->> (gen/reserve (quot threads 2)
+  (let [n (or (:concurrency opts)
+              (* 2 (count (:nodes opts))))]
+    {:concurrency n
+     :generator (->> (gen/reserve (quot n 2)
                                   (repeat {:type :invoke, :f :inc})
-                                  (repeat {:type :invoke, :f :read}))
-                     (gen/stagger (/ 1 threads)))
+                                  (repeat {:type :invoke, :f :read})))
      :checker   (checker)}))
