@@ -393,12 +393,16 @@
    ; :--max_clock_skew_usec 1
    ; Disable YugaByte call-home analytics
    :--callhome_enabled=false
+   ; I suspect that we might be seeing awful performance because the wait
+   ; queues have a high poll interval; let's try lowering it from 100 -> 10 ms
+   :--wait_queue_poll_interval_ms 10
    ])
 
 (defn master-tserver-packed-columns
   "TODO: what is this?"
   [test]
-  (if (and (v/newer-or-equal? (:version test) minimal-packed-version) (:yb-packed-columns-enabled test))
+  (if (and (v/newer-or-equal? (:version test) minimal-packed-version)
+           (:yb-packed-columns-enabled test))
     [:--ysql_enable_packed_row]
     [])
   )
@@ -666,6 +670,8 @@
           (recur (next items) (conj out x) seen))))))
 
 (defn apply-extra-gflags
+  ; aphyr, 2028-08-17: I think this is more Claude nonsense. This does not
+  ; apply any extra flags at all! It seems to merge flags together?
   "Apply extra gflags to a flag vector built by start-master!/start-tserver!.
   The flag vector is first flattened and its CSV flags collapsed (so multiple
   features can each emit allowed_preview_flags_csv safely). Regular extra flags
@@ -772,6 +778,8 @@
                ; Tracing
                :--enable_tracing
                :--rpc_slow_query_threshold_ms 1000
+               ; Reduce retries to try and get a handle on ridiculous latencies
+               :--ysql_pg_conf_csv "yb_max_query_layer_retries=5"
                (master-tserver-experimental-tuning-flags test)
                (master-tserver-random-clock-skew test node)
                (master-tserver-packed-columns test)
