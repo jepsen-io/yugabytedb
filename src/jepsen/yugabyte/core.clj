@@ -244,17 +244,7 @@
             (:workload opts)))
     (assoc opts
       :api api
-      ; Serializable workloads conflict heavily; run them with fewer worker
-      ; threads (~half) so contention doesn't drown out useful throughput.
-      ; Keep the result a multiple of 4 (and >= 4): the *-key-acid and set
-      ; workloads split threads via (/ threads 2) and (/ threads 4), and jepsen
-      ; asserts those group sizes are integers, so an odd count crashes.
-      :concurrency (let [c (:concurrency opts)]
-                     (if (= :serializable (:isolation opts))
-                       (min c (max 4 (* 4 (quot c 8))))
-                       c))
-      ; Connection manager (YSQL Connection Manager / Odyssey) only applies to
-      ; YSQL. Never enable it for YCQL tests, regardless of the CLI flag.
+      ; Connection manager only applies to YSQL.
       :connection-manager (and (not= :ycql api) (:connection-manager opts))
       :db (db/->YugaByteDB)
 
@@ -269,17 +259,19 @@
             :repeatable-read  :strong-snapshot-isolation
             :serializable     :strong-serializable))
 
-      :name (str "yb_" (-> (or (:url opts) (:version opts))
+      :name (str (-> (or (:url opts) (:version opts))
                            (str/split #"/")
                            (last))
-                 "_" (name api)
-                 "_" (name (:workload opts))
+                 " " (name api)
+                 " " (name (:workload opts))
+                 " " (:isolation opts)
+                 (when (:geo-partition opts) " geo")
                  (when-not (= [:interval] (keys (:nemesis opts)))
-                   (str "_nemesis_" (->> (dissoc (:nemesis opts) :interval)
-                                         keys
-                                         (map name)
-                                         sort
-                                         (str/join ",")))))
+                   (str "nemesis" (->> (dissoc (:nemesis opts) :interval)
+                                       keys
+                                       (map name)
+                                       sort
+                                       (str/join ",")))))
       :os (case (:os opts)
             :centos centos/os
             :debian debian/os)
