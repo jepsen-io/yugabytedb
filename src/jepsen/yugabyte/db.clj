@@ -55,11 +55,6 @@
 
 (def tablespace-name "geo_tablespace")
 
-(def max-bump-time-ops-per-test
-  "Upper bound on number of bump time ops per test, needed to estimate max
-  clock skew between servers"
-  100)
-
 (defprotocol Auto
   (install! [db test])
   (configure! [db test node])
@@ -375,8 +370,8 @@
                (catch RuntimeException e nil))))
 
 
-(defn ce-shared-opts
-  "Shared options for both master and tserver"
+(defn basic-flags
+  "Shared configuration flags for both master and tserver"
   [node]
   [; Data files!
    :--fs_data_dirs ce-data-dir
@@ -395,7 +390,9 @@
    :--callhome_enabled=false
    ])
 
-(defn master-tserver-packed-columns
+
+
+(defn packed-columns-flags
   "TODO: what is this?"
   [test]
   (if (and (v/newer-or-equal? (:version test) minimal-packed-version)
@@ -404,14 +401,14 @@
     [])
   )
 
-(defn master-api-opts
+(defn master-api-flags
   "API-specific options for master"
   [api node]
   (if (= api :ysql)
     [:--use_initial_sys_catalog_snapshot]
     []))
 
-(defn tserver-api-opts
+(defn tserver-api-flags
   "API-specific options for tserver"
   [test node]
   (if (:connection-manager test)
@@ -474,7 +471,7 @@
 (def get-node-skew
   (memoize get-random-node-skew))
 
-(defn master-tserver-random-clock-skew
+(defn random-clock-skew-flags
   "Enable random clock skew
 
   max-skew parameter is less than (490 / (tservers + master))
@@ -492,7 +489,7 @@
     []))
 
 
-(defn tserver-connection-manager-preview
+(defn tserver-connection-manager-preview-flags
   "Preview flags for connection manager feature"
   [test]
   (if (:connection-manager test)
@@ -500,7 +497,7 @@
      :--enable_ysql_conn_mgr]
     []))
 
-(defn master-tserver-geo-partitioning-flags
+(defn geo-partitioning-flags
   "Geo partitioning specific mapping flags
   Each node will be mapped to id in [1 2] and then used in each node."
   [test node nodes]
@@ -531,7 +528,7 @@
      :--client_read_write_timeout_ms 6000]
     []))
 
-(defn master-tserver-experimental-tuning-flags
+(defn experimental-tuning-flags
   "Speed up recovery from partitions and crashes. Right now it looks like
   these actually make the cluster slower to, or unable to, recover."
   [test]
@@ -566,7 +563,7 @@
         [; Reduce retries to try and get a handle on ridiculous latencies
          :--ysql_pg_conf_csv "yb_max_query_layer_retries=5"]))
 
-(defn master-tserver-stress-flags
+(defn stress-flags
   "Shared stress-test flags for master and tserver.
   Disabled flags are commented with the reason — re-enable after verifying startup."
   [test]
@@ -582,28 +579,30 @@
   "Stress-test flags for master: tablet splitting.
   Disabled — tiny thresholds cause split storms during bootstrap."
   [test]
-  (if (:stress-tuning test)
-    [; :--enable_automatic_tablet_splitting true
+  (into (stress-flags test)
+        (if (:stress-tuning test)
+          [; :--enable_automatic_tablet_splitting true
 ;      :--tablet_split_low_phase_size_threshold_bytes 1024
 ;      :--tablet_split_high_phase_size_threshold_bytes 4096
 ;      :--tablet_force_split_threshold_bytes 8192
-     ]
-    []))
+           ]
+          [])))
 
 (defn tserver-stress-flags
   "Stress-test flags for tserver — DocDB, RocksDB, MVCC, intent cleanup."
   [test]
-  (if (:stress-tuning test)
-    [:--txn_max_apply_batch_records 5
+  (into (stress-flags test)
+        (if (:stress-tuning test)
+          [:--txn_max_apply_batch_records 5
 ;      :--db_write_buffer_size 524288
-      :--db_block_cache_size_bytes 8388608
+           :--db_block_cache_size_bytes 8388608
 ;     :--aborted_intent_cleanup_ms 1000
-     :--timestamp_history_retention_interval_sec 5
+           :--timestamp_history_retention_interval_sec 5
 ;     :--transaction_deadlock_detection_interval_usec 1000000
-     :--backfill_index_write_batch_size 10
+           :--backfill_index_write_batch_size 10
      ; :--cdc_stream_records_threshold_size_bytes 1024
-     ]
-    []))
+           ]
+          [])))
 
 (defn parse-gflag
   "Parse a gflag spec 'flag_name=value' into [flag-name value], or
@@ -770,18 +769,18 @@
              :chdir   dir}
             ce-master-bin
             (apply-extra-gflags
-              [(ce-shared-opts node)
-               :--master_addresses (master-addresses test)
+              [:--master_addresses (master-addresses test)
                :--replication_factor (:replication-factor test)
-               (master-tserver-experimental-tuning-flags test)
-               (master-tserver-random-clock-skew test node)
-               (master-tserver-packed-columns test)
-               (master-tserver-geo-partitioning-flags test node (:nodes test))
-               (master-tserver-stress-flags test)
+               (basic-flags node)
+               (experimental-tuning-flags test)
+               (packed-columns-flags test)
+               (geo-partitioning-flags test node (:nodes test))
                (master-stress-flags test)
                (master-perf-flags test)
                (master-append-table-flags test)
-               (master-api-opts (:api test) node)]
+               (master-api-flags (:api test) node)
+               (packed-columns-flags test)
+]
               (:master-flags test)))))
 
   (start-tserver! [db test node]
@@ -793,19 +792,18 @@
              :chdir   dir}
             ce-tserver-bin
             (apply-extra-gflags
-              [(ce-shared-opts node)
-               :--tserver_master_addrs (master-addresses test)
+              [:--tserver_master_addrs (master-addresses test)
                ; Tracing
                :--enable_tracing
                :--rpc_slow_query_threshold_ms 1000
-               (master-tserver-experimental-tuning-flags test)
-               (master-tserver-random-clock-skew test node)
-               (master-tserver-packed-columns test)
-               (master-tserver-geo-partitioning-flags test node (:nodes test))
-               (master-tserver-stress-flags test)
+               (basic-flags node)
+               (experimental-tuning-flags test)
+               (random-clock-skew-flags test node)
+               (packed-columns-flags test)
+               (geo-partitioning-flags test node (:nodes test))
                (tserver-stress-flags test)
-               (tserver-api-opts test node)
-               (tserver-connection-manager-preview test)
+               (tserver-api-flags test node)
+               (tserver-connection-manager-preview-flags test)
                (tserver-read-committed-flags test)
                (tserver-serializable-flags test)
                (tserver-perf-flags test)
