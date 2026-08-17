@@ -29,11 +29,6 @@
   "The default password"
   "jepsen")
 
-; TODO: refactor this to use (:isolation test)
-(def conn-isolation-level
-  "Default isolation level for connections"
-  Connection/TRANSACTION_SERIALIZABLE)
-
 (defn ysql-port
   [test]
   (if (:connection-manager test)
@@ -46,6 +41,14 @@
 (def max-delay-between-retries-ms
   "Maximum delay between retries for with-retry"
   200)
+
+(def isolation-levels
+  "Transaction isolation levels."
+  {:none             Connection/TRANSACTION_NONE
+   :read-committed   Connection/TRANSACTION_READ_COMMITTED
+   :read-uncommitted Connection/TRANSACTION_READ_UNCOMMITTED
+   :repeatable-read  Connection/TRANSACTION_REPEATABLE_READ
+   :serializable     Connection/TRANSACTION_SERIALIZABLE})
 
 (defn db-spec
   "Assemble a JDBC connection specification for a given Jepsen node."
@@ -133,20 +136,21 @@
 
 (defn open-conn
   "Opens a connection to the given node."
-  [dbname user password node port]
+  [test dbname user password node port]
   (util/timeout default-timeout
                 (throw+ {:type :connection-timed-out
                          :node node})
                 (info "Connection" dbname)
                 (loop []
                   (or (try
-                        (let [spec (db-spec dbname user password node port)
-                              conn (j/get-connection spec)
-                              spec' (j/add-connection spec conn)]
-                          (.setTransactionIsolation conn conn-isolation-level)
+                        (let [spec  (db-spec dbname user password node port)
+                              conn  (j/get-connection spec)
+                              spec' (j/add-connection spec conn)
+                              isolation (isolation-levels (:isolation test))]
+                          (.setTransactionIsolation conn isolation)
                           (assert spec')
                           (assert (= (.getTransactionIsolation conn)
-                                     conn-isolation-level))
+                                     isolation))
                           spec')
                         (catch Exception e
                           (Thread/sleep (long 100))
@@ -156,7 +160,7 @@
 (defn open
   "Given a test and node, opens a next.jdbc connection to it."
   [test node]
-  (open-conn dbname user password node (ysql-port test)))
+  (open-conn test dbname user password node (ysql-port test)))
 
 (defn close-conn
   "Given a JDBC connection, closes it and returns the underlying spec."
