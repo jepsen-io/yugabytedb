@@ -29,10 +29,9 @@
 (def contention-keys (range end-key (+ end-key 3)))
 
 (defn transfer-without-deletes
-  "Based on from original jepsen.tests.bank.transfer generator.
-
-  Generator of a transfer: a random amount between two randomly selected accounts.
-  Added insert operation. Special case for YCQL"
+  "Generator of a transfer: a random amount between two randomly selected
+  accounts. Added insert operation. Special case for YCQL. TODO: why can't we
+  do deletes in YCQL?"
   [test process]
   (let [dice (random/nth [:insert :update])]
     (cond
@@ -51,12 +50,9 @@
                :amount (+ 1 (random/long (:max-transfer test)))}})))
 
 (defn transfer-contention-keys
-  "Based on from original jepsen.tests.bank.transfer generator.
-
-  Generator of a transfer: a random amount between two randomly selected
-  accounts.
-  A random amount between two randomly selected accounts with set of contention keys
-  that may be inserted, deleted or updated."
+  "Generator of a transfer: a random amount between two randomly selected
+  accounts. A random amount between two randomly selected accounts with set of
+  contention keys that may be inserted, deleted or updated."
   [test process]
   (let [dice (random/nth (:operations test))]
     (cond

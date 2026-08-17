@@ -1,4 +1,8 @@
 (ns jepsen.yugabyte.ycql.bank
+  "Bank workload for YugaByteDB. Note that YCQL does not support reads or
+  conditional writes in transactions
+  (https://docs.yugabyte.com/stable/api/ycql/dml_transaction/), so we can't
+  prevent negative balances in this workload."
   (:refer-clojure :exclude [test])
   (:require [clojure.tools.logging :refer [debug info warn]]
             [jepsen.random :as random]
@@ -51,6 +55,8 @@
   (teardown! [this test]))
 
 ;; Shouldn't be used until we support transactions with selects.
+; aphyr, 2026-08-17: looks like this is in use now. TODO: take a closer look at
+; this.
 (c/defclient MultiClient keyspace []
   (setup! [this test]
     (info "Creating accounts")

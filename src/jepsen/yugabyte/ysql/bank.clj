@@ -7,14 +7,12 @@
 (def table-name "accounts")
 (def index-name "idx_accounts")
 
-;
-; Single-table bank test
-;
+;; Single-table bank test
 
 (defn- read-accounts-map
   "Read {id balance} accounts map from a unified bank table"
   [op c]
-  (let [use-index? (zero? (random/long 2))]
+  (let [use-index? (random/bool)]
     (info table-name (if use-index? "IndexOnlyScan" "SeqScan"))
     (->> (str (when use-index?
                 (str "/*+ IndexOnlyScan(" table-name " " index-name ") */ "))
@@ -29,7 +27,8 @@
   (setup-cluster! [this test c conn-wrapper]
     (c/execute! c (j/create-table-ddl table-name [[:id :int "PRIMARY KEY"]
                                                   [:balance :bigint]]))
-    (c/execute! c (str "CREATE INDEX " index-name " ON " table-name " (id, balance)"))
+    (c/execute! c (str "CREATE INDEX " index-name " ON " table-name
+                       " (id, balance)"))
     (c/with-retry
       (info "Creating accounts")
       (c/insert! c table-name {:id      (first (:accounts test))
@@ -47,16 +46,20 @@
       :transfer
       (c/with-txn test c
         (let [{:keys [from to amount]} (:value op)]
-          (let [b-from-before (c/select-single-value op c table-name :balance (str "id = " from))
-                b-to-before   (c/select-single-value op c table-name :balance (str "id = " to))
+          (let [b-from-before (c/select-single-value
+                                op c table-name :balance (str "id = " from))
+                b-to-before   (c/select-single-value
+                                op c table-name :balance (str "id = " to))
                 b-from-after  (- b-from-before amount)
                 b-to-after    (+ b-to-before amount)
                 allowed?      (or allow-negatives? (pos? b-from-after))]
-            (if (not allowed?)
-              (assoc op :type :fail, :error [:negative from b-from-after])
-              (do (c/update! op c table-name {:balance b-from-after} ["id = ?" from])
-                  (c/update! op c table-name {:balance b-to-after} ["id = ?" to])
-                  (assoc op :type :ok))))))))
+            (if allowed?
+              (do (c/update! op c table-name {:balance b-from-after}
+                             ["id = ?" from])
+                  (c/update! op c table-name {:balance b-to-after}
+                             ["id = ?" to])
+                  (assoc op :type :ok))
+              (assoc op :type :fail, :error [:negative from b-from-after])))))))
 
 
   (teardown-cluster! [this test c conn-wrapper]
@@ -117,16 +120,14 @@
                 b-from-after  (- b-from-before amount)
                 b-to-after    (+ b-to-before amount)
                 allowed?      (or allow-negatives? (pos? b-from-after))]
-            (if (not allowed?)
-              (assoc op :type :fail, :error [:negative from b-from-after])
+            (if allowed?
               (do (c/update! op c (str table-name from) {:balance b-from-after} ["id = ?" from])
                   (c/update! op c (str table-name to) {:balance b-to-after} ["id = ?" to])
-                  (assoc op :type :ok))))))))
-
+                  (assoc op :type :ok)
+                  (assoc op :type :fail, :error [:negative from b-from-after]))))))))
 
   (teardown-cluster! [this test c conn-wrapper]
     (doseq [a (:accounts test)]
       (c/drop-table c (str table-name a)))))
-
 
 (c/defclient MultiClient InternalMultiClient)

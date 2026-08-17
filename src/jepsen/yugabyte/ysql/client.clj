@@ -29,6 +29,7 @@
   "The default password"
   "jepsen")
 
+; TODO: refactor this to use (:isolation test)
 (def conn-isolation-level
   "Default isolation level for connections"
   Connection/TRANSACTION_SERIALIZABLE)
