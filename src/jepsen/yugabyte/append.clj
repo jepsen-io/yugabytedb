@@ -12,6 +12,7 @@
   [opts]
   (-> (assoc
         (select-keys opts [:key-count
+                           :key-dist
                            :max-txn-length
                            :max-writes-per-key])
         :consistency-models [(:expected-consistency-model opts)])
