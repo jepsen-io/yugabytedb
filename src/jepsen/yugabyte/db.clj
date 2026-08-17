@@ -390,8 +390,6 @@
    :--callhome_enabled=false
    ])
 
-
-
 (defn packed-columns-flags
   "TODO: what is this?"
   [test]
@@ -773,14 +771,13 @@
                :--replication_factor (:replication-factor test)
                (basic-flags node)
                (experimental-tuning-flags test)
-               (packed-columns-flags test)
                (geo-partitioning-flags test node (:nodes test))
-               (master-stress-flags test)
-               (master-perf-flags test)
-               (master-append-table-flags test)
                (master-api-flags (:api test) node)
+               (master-append-table-flags test)
+               (master-perf-flags test)
+               (master-stress-flags test)
                (packed-columns-flags test)
-]
+               ]
               (:master-flags test)))))
 
   (start-tserver! [db test node]
@@ -798,17 +795,17 @@
                :--rpc_slow_query_threshold_ms 1000
                (basic-flags node)
                (experimental-tuning-flags test)
-               (random-clock-skew-flags test node)
-               (packed-columns-flags test)
                (geo-partitioning-flags test node (:nodes test))
-               (tserver-stress-flags test)
+               (packed-columns-flags test)
+               (random-clock-skew-flags test node)
                (tserver-api-flags test node)
+               (tserver-append-table-flags test)
                (tserver-connection-manager-preview-flags test)
+               (tserver-heartbeat-flags test)
+               (tserver-perf-flags test)
                (tserver-read-committed-flags test)
                (tserver-serializable-flags test)
-               (tserver-perf-flags test)
-               (tserver-append-table-flags test)
-               (tserver-heartbeat-flags test)]
+               (tserver-stress-flags test)]
               (:tserver-flags test)))))
 
   (stop-master! [db]
