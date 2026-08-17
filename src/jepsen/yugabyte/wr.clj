@@ -12,7 +12,9 @@
 (defn workload
   "Takes CLI options and constructs a workload: a partial test map."
   [opts]
-  (wr/test {:key-count          10
-            :max-txn-length     4
-            :max-writes-per-key 256
-            :consistency-models [(:expected-consistency-model opts)]}))
+  (wr/test (assoc (select-keys opts
+                               [:key-count
+                                :key-dist
+                                :max-txn-length
+                                :max-writes-per-key])
+                  :consistency-models [(:expected-consistency-model opts)])))
