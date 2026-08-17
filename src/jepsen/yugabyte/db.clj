@@ -393,9 +393,6 @@
    ; :--max_clock_skew_usec 1
    ; Disable YugaByte call-home analytics
    :--callhome_enabled=false
-   ; I suspect that we might be seeing awful performance because the wait
-   ; queues have a high poll interval; let's try lowering it from 100 -> 10 ms
-   :--wait_queue_poll_interval_ms 10
    ])
 
 (defn master-tserver-packed-columns
@@ -534,7 +531,6 @@
      :--client_read_write_timeout_ms 6000]
     []))
 
-
 (defn master-tserver-experimental-tuning-flags
   "Speed up recovery from partitions and crashes. Right now it looks like
   these actually make the cluster slower to, or unable to, recover."
@@ -546,6 +542,29 @@
      :--rpc_default_keepalive_time_ms 5000
      :--rpc_connection_timeout_ms 1500]
     []))
+
+(defn perf-flags
+  "Common performance-related flags. YB basically falls over if you have any
+  kind of contended workload, and most of these workloads exist specifically to
+  test contention. I'm seeing routine 30-second latencies for small
+  transactions and throughput of ~1 txn/sec. It's rooough."
+  [test]
+  [; Poll txn coordinators more often for the status of blocking
+   ; transactions. I think this helps reduce latencies a bit?
+   :--wait_queue_poll_interval_ms 10])
+
+(defn master-perf-flags
+  "Master performance-related flags."
+  [test]
+  (into (perf-flags test)
+        []))
+
+(defn tserver-perf-flags
+  "TServer performance-related flags we use to try and improve YB latencies."
+  [test]
+  (into (perf-flags test)
+        [; Reduce retries to try and get a handle on ridiculous latencies
+         :--ysql_pg_conf_csv "yb_max_query_layer_retries=5"]))
 
 (defn master-tserver-stress-flags
   "Shared stress-test flags for master and tserver.
@@ -760,6 +779,7 @@
                (master-tserver-geo-partitioning-flags test node (:nodes test))
                (master-tserver-stress-flags test)
                (master-stress-flags test)
+               (master-perf-flags test)
                (master-append-table-flags test)
                (master-api-opts (:api test) node)]
               (:master-flags test)))))
@@ -778,8 +798,6 @@
                ; Tracing
                :--enable_tracing
                :--rpc_slow_query_threshold_ms 1000
-               ; Reduce retries to try and get a handle on ridiculous latencies
-               :--ysql_pg_conf_csv "yb_max_query_layer_retries=5"
                (master-tserver-experimental-tuning-flags test)
                (master-tserver-random-clock-skew test node)
                (master-tserver-packed-columns test)
@@ -790,6 +808,7 @@
                (tserver-connection-manager-preview test)
                (tserver-read-committed-flags test)
                (tserver-serializable-flags test)
+               (tserver-perf-flags test)
                (tserver-append-table-flags test)
                (tserver-heartbeat-flags test)]
               (:tserver-flags test)))))
