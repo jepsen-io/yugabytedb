@@ -137,25 +137,16 @@
 (defn open-conn
   "Opens a connection to the given node."
   [test dbname user password node port]
-  (util/timeout default-timeout
-                (throw+ {:type :connection-timed-out
-                         :node node})
-                (info "Connection" dbname)
-                (loop []
-                  (or (try
-                        (let [spec  (db-spec dbname user password node port)
-                              conn  (j/get-connection spec)
-                              spec' (j/add-connection spec conn)
-                              isolation (isolation-levels (:isolation test))]
-                          (.setTransactionIsolation conn isolation)
-                          (assert spec')
-                          (assert (= (.getTransactionIsolation conn)
-                                     isolation))
-                          spec')
-                        (catch Exception e
-                          (Thread/sleep (long 100))
-                          nil))
-                      (recur)))))
+  (let [spec  (db-spec dbname user password node port)
+        conn  (j/get-connection spec)
+        spec' (j/add-connection spec conn)
+        isolation (isolation-levels (:isolation test))]
+    (assert spec')
+    (.setTransactionIsolation conn isolation)
+    (assert (= (.getTransactionIsolation conn)
+               isolation))
+    (j/execute! spec' ["SET statement_timeout = '1s'"])
+    spec'))
 
 (defn open
   "Given a test and node, opens a next.jdbc connection to it."
