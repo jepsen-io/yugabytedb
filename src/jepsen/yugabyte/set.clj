@@ -15,8 +15,8 @@
 
 (defn workload
   [opts]
-  (let [threads  (:concurrency opts)]
-    {:generator (->> (gen/reserve (/ threads 2) (adds)
-                                  reads)
-                     (gen/stagger (/ 1 threads)))
+  (let [c (or (:concurrency opts)
+              (* 2 (count (:nodes opts))))]
+    {:generator (gen/reserve (/ c 2) (adds)
+                             reads)
      :checker   (checker/set-full)}))
