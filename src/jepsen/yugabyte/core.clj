@@ -2,59 +2,54 @@
   "Integrates workloads, nemeses, and automation to construct test maps."
   (:require [clojure.tools.logging :refer :all]
             [clojure.string :as str]
-            [jepsen [checker :as checker]
-             [generator :as gen]
-             [random :as random]
-             [tests :as tests]
-             [util :refer [map-vals]]
-             [sql :as sql]]
+            [jepsen [checker   :as checker]
+                    [generator :as gen]
+                    [random    :as random]
+                    [sql       :as sql]
+                    [tests     :as tests]
+                    [util      :refer [map-vals]]]
             [jepsen.os.debian :as debian]
             [jepsen.os.centos :as centos]
-            [jepsen.yugabyte
-             [upsert :as upsert]
-             [append :as append]
-             [bank :as bank]
-             [bank-improved :as bank-improved]
-             [counter :as counter]
-             [db :as db]
-             [default-value :as default-value]
-             [g2 :as g2]
-             [long-fork :as long-fork]
-             [monotonic :as monotonic]
-             [multi-key-acid :as multi-key-acid]
-             [nemesis :as nemesis]
-             [set :as set]
-             [single-key-acid :as single-key-acid]
-             [types :as types]
-             [wr :as wr]]
-            [jepsen.yugabyte.ycql
-             [bank :as ycql.bank]
-             [bank-improved :as ycql.bank-improved]
-             [counter :as ycql.counter]
-             [long-fork :as ycql.long-fork]
-             [monotonic :as ycql.monotonic]
-             [multi-key-acid :as ycql.multi-key-acid]
-             [set :as ycql.set]
-             [single-key-acid :as ycql.single-key-acid]
-             [upsert :as ycql.upsert]
-             [types :as ycql.types]]
-            [jepsen.yugabyte.ysql
-             [append        :as ysql.append]
-             [append-table  :as ysql.append-table]
-             [bank :as ysql.bank]
-             [bank-improved :as ysql.bank-improved]
-             [client        :as ysql.client]
-             [counter :as ysql.counter]
-             [default-value :as ysql.default-value]
-             [long-fork :as ysql.long-fork]
-             [multi-key-acid :as ysql.multi-key-acid]
-             [set :as ysql.set]
-             [single-key-acid :as ysql.single-key-acid]
-             [wr            :as ysql.wr]
-             [upsert        :as ysql.upsert]
-             [types         :as ysql.types]
-             [g2            :as ysql.g2]
-             [monotonic     :as ysql.monotonic]])
+            [jepsen.yugabyte [append          :as append]
+                             [bank            :as bank]
+                             [bank-improved   :as bank-improved]
+                             [counter         :as counter]
+                             [db              :as db]
+                             [default-value   :as default-value]
+                             [g2              :as g2]
+                             [long-fork       :as long-fork]
+                             [monotonic       :as monotonic]
+                             [multi-key-acid  :as multi-key-acid]
+                             [nemesis         :as nemesis]
+                             [set             :as set]
+                             [single-key-acid :as single-key-acid]
+                             [types           :as types]
+                             [wr              :as wr]]
+            [jepsen.yugabyte.ycql [bank            :as ycql.bank]
+                                  [bank-improved   :as ycql.bank-improved]
+                                  [counter         :as ycql.counter]
+                                  [long-fork       :as ycql.long-fork]
+                                  [monotonic       :as ycql.monotonic]
+                                  [multi-key-acid  :as ycql.multi-key-acid]
+                                  [set             :as ycql.set]
+                                  [single-key-acid :as ycql.single-key-acid]
+                                  [types           :as ycql.types]]
+            [jepsen.yugabyte.ysql [append          :as ysql.append]
+                                  [append-table    :as ysql.append-table]
+                                  [bank            :as ysql.bank]
+                                  [bank-improved   :as ysql.bank-improved]
+                                  [client          :as ysql.client]
+                                  [counter         :as ysql.counter]
+                                  [default-value   :as ysql.default-value]
+                                  [g2              :as ysql.g2]
+                                  [long-fork       :as ysql.long-fork]
+                                  [monotonic       :as ysql.monotonic]
+                                  [multi-key-acid  :as ysql.multi-key-acid]
+                                  [set             :as ysql.set]
+                                  [single-key-acid :as ysql.single-key-acid]
+                                  [types           :as ysql.types]
+                                  [wr              :as ysql.wr]
+             ])
   (:import (jepsen.client Client)))
 
 (def version-regex #"(?<=yugabyte\-)(\d+\.\d+(\.\d+){0,2}(-b\d+)?)")
@@ -96,8 +91,7 @@
      :set             set/workload                        (ycql.set/->Client)
      :set-index       set/workload                        (ycql.set/->IndexClient)
      :single-key-acid single-key-acid/workload            (ycql.single-key-acid/->Client)
-     :types           types/workload                      (ycql.types/->Client)
-     :upsert          upsert/workload                     (ycql.upsert/->Client)]))
+     :types           types/workload                      (ycql.types/->Client)]))
 
 (def workloads-ysql
   "A map of workload names to functions that can take option maps and construct workloads."
@@ -118,7 +112,6 @@
      :set-index       set/workload                           (ysql.set/->IndexClient)
      :single-key-acid single-key-acid/workload               (ysql.single-key-acid/->Client)
      :types           types/workload                         (ysql.types/->Client)
-     :upsert          upsert/workload                        (ysql.upsert/->Client)
      :wr              wr/workload                            (ysql.wr/->Client)]))
 
 (def workloads-jsql
