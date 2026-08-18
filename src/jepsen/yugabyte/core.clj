@@ -267,11 +267,11 @@
                  " " (:isolation opts)
                  (when (:geo-partition opts) " geo")
                  (when-not (= [:interval] (keys (:nemesis opts)))
-                   (str "nemesis" (->> (dissoc (:nemesis opts) :interval)
-                                       keys
-                                       (map name)
-                                       sort
-                                       (str/join ",")))))
+                   (str " nemesis" (->> (dissoc (:nemesis opts) :interval)
+                                        keys
+                                        (map name)
+                                        sort
+                                        (str/join ",")))))
       :os (case (:os opts)
             :centos centos/os
             :debian debian/os)
