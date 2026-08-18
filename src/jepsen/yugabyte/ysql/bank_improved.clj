@@ -2,6 +2,7 @@
   (:require [version-clj.core :as v]
             [clojure.java.jdbc :as j]
             [clojure.tools.logging :refer [info]]
+            [jepsen [random :as rand]]
             [jepsen.yugabyte.ysql.client :as c]))
 
 (def table-name "accounts")
@@ -24,6 +25,10 @@
      (map (juxt :id :balance))
      (into (sorted-map)))))
 
+(defn get-balance
+  "Gets the balance of the given account."
+  [op conn account]
+  (c/select-single-value op conn table-name :balance (str "id = " account)))
 
 (defrecord InternalClient []
   c/YSQLYbClient
@@ -53,51 +58,63 @@
       :transfer
       (c/with-txn test c
         (let [{:keys [from to amount]} (:value op)
-              b-from-before (c/select-single-value op c table-name :balance (str "id = " from))
-              b-to-before (c/select-single-value op c table-name :balance (str "id = " to))]
-          (cond
-            (or (nil? b-from-before) (nil? b-to-before))
-            (assoc op :type :fail)
+              b-from (get-balance op c from)
+              b-to   (get-balance op c to)]
+          (cond ; One account doesn't exist
+                (or (nil? b-from) (nil? b-to))
+                (assoc op :type :fail)
 
-            :else
-            (let [b-from-after (- b-from-before amount)
-                  b-to-after (+ b-to-before amount)]
-              (do
-                (c/update! op c table-name {:balance b-from-after} ["id = ?" from])
-                (c/update! op c table-name {:balance b-to-after} ["id = ?" to])
-                (assoc op :type :ok))))))
+                ; Self-transfer
+                (= from to)
+                (do (c/update! op c table-name {:balance (- b-from amount)}
+                               ["id = ?" from])
+                    (Thread/sleep (rand/zipf 10))
+                    (c/update! op c table-name {:balance b-from}
+                               ["id = ?" from])
+                    (assoc op :type :fail))
+
+                ; Different accounts
+                true
+                (let [b-from' (- b-from amount)
+                      b-to'   (+ b-to amount)]
+                  (c/update! op c table-name {:balance b-from'} ["id = ?" from])
+                  (c/update! op c table-name {:balance b-to'} ["id = ?" to])
+                  (assoc op :type :ok)))))
 
       :delete
       (c/with-txn test c
         (let [{:keys [from to]} (:value op)
-              b-from-before (c/select-single-value op c table-name :balance (str "id = " from))
-              b-to-before (c/select-single-value op c table-name :balance (str "id = " to))]
+              b-from (get-balance op c from)
+              b-to   (get-balance op c to)]
           (cond
-            (or (nil? b-from-before) (nil? b-to-before))
+            (or (nil? b-from) (nil? b-to))
             (assoc op :type :fail)
 
             :else
-            (let [b-to-after-delete (+ b-to-before b-from-before)]
-              (do
-                (c/execute! op c [(str "DELETE FROM " table-name " WHERE id = ?") from])
-                (c/update! op c table-name {:balance b-to-after-delete} ["id = ?" to])
-                (assoc op :type :ok :value {:from from, :to to, :amount b-from-before}))))))
+            (let [b-to' (+ b-to b-from)]
+              (c/execute! op c [(str "DELETE FROM " table-name " WHERE id = ?")
+                                from])
+              (Thread/sleep (rand/zipf 10))
+              (c/update! op c table-name {:balance b-to'} ["id = ?" to])
+                (assoc op
+                       :type :ok
+                       :value {:from from, :to to, :amount b-from})))))
 
       :insert
       (c/with-txn test c
         (let [{:keys [from to amount]} (:value op)
-              b-from-before (c/select-single-value op c table-name :balance (str "id = " from))
-              b-to-before (c/select-single-value op c table-name :balance (str "id = " to))]
+              b-from (get-balance op c from)
+              b-to   (get-balance op c to)]
           (cond
-            (or (nil? b-from-before) (not (nil? b-to-before)))
+            (or (nil? b-from) (not (nil? b-to)))
             (assoc op :type :fail)
 
             :else
-            (let [b-from-after (- b-from-before amount)]
-              (do
-                (c/update! op c table-name {:balance b-from-after} ["id = ?" from])
-                (c/insert! op c table-name {:id to :balance amount})
-                (assoc op :type :ok :value {:from from, :to to, :amount amount}))))))))
+            (let [b-from' (- b-from amount)]
+              (c/update! op c table-name {:balance b-from'} ["id = ?" from])
+              (Thread/sleep (rand/zipf 10))
+              (c/insert! op c table-name {:id to, :balance amount})
+              (assoc op :type :ok)))))))
 
   (teardown-cluster! [this test c conn-wrapper]
     (c/drop-table c table-name)))
