@@ -83,6 +83,10 @@
 
      [nil "--geo-partition" "For workloads like `append`, partitions tables with geo_partition"]
 
+     [nil "--[no-]linearizable-keys" "If set, assumes keys are linearizable for the wr workload."
+      :id :linearizable-keys?
+      :default true]
+
      [nil "--nemesis SPEC" "A comma-separated list of nemesis types"
       :default {:interval 10}
       :parse-fn parse-nemesis-spec

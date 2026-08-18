@@ -16,5 +16,8 @@
                                [:key-count
                                 :key-dist
                                 :max-txn-length
-                                :max-writes-per-key])
+                                :max-writes-per-key
+                                :wfr-keys?
+                                :sequential-keys?
+                                :linearizable-keys?])
                   :consistency-models [(:expected-consistency-model opts)])))
