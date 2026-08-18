@@ -466,7 +466,6 @@
   "Helper for defining YSQL clients.
   Takes a new class name symbol and a definition of YSQLClientBase record
   whose methods will be wrapped and called.
-  Appends :op-timing with pretty-printed operation start and finish times.
 
   This approach is (arguably) cleaner than the one used for YCQL defclient.
   Separate defrecord, among other things, allows to clearly see
@@ -533,12 +532,9 @@
                (info "Setup sucessful")))
 
            (invoke! [~'this ~'test ~'op]
-             (let [~'start-dt (yutil/current-pretty-datetime)
-                   ~'op2 (with-conn [~'c ~'conn-wrapper]
-                                    (with-errors ~'op
-                                                 (invoke-op! ~'inner-client ~'test ~'op ~'c ~'conn-wrapper)))
-                   ~'op3 (assoc ~'op2 :op-timing [~'start-dt (yutil/current-pretty-datetime)])]
-               ~'op3))
+             (with-conn [~'c ~'conn-wrapper]
+               (with-errors ~'op
+                 (invoke-op! ~'inner-client ~'test ~'op ~'c ~'conn-wrapper))))
 
            (teardown! [~'this ~'test]
              (once-per-cluster
