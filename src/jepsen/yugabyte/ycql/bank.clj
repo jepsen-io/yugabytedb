@@ -36,18 +36,25 @@
              (into (sorted-map))
              (assoc op :type :ok, :value))
 
+        ; The DML transactions page doesn't seem to talk about failure
+        ; semantics at all. If a statement throws an error, I *assume* you're
+        ; guaranteed that none of the other statements in that transaction take
+        ; effect, right?
         :transfer
         (let [{:keys [from to amount]} (:value op)]
           (c/execute!
             conn
-            ; TODO: separate reads from updates?
-            (str "BEGIN TRANSACTION "
-                 "UPDATE " keyspace "." table-name
-                 " SET balance = balance - " amount " WHERE id = " from ";"
+            (str "BEGIN TRANSACTION"
 
-                 "UPDATE " keyspace "." table-name
-                 " SET balance = balance + " amount " WHERE id = " to ";"
-                 "END TRANSACTION;"))
+                 " UPDATE " keyspace "." table-name
+                 " SET balance = balance - " amount " WHERE id = " from
+                 " IF EXISTS ELSE ERROR;"
+
+                 " UPDATE " keyspace "." table-name
+                 " SET balance = balance + " amount " WHERE id = " to
+                 " IF EXISTS ELSE ERROR;"
+
+                 " END TRANSACTION;"))
           (assoc op :type :ok))
 
         :insert
@@ -56,6 +63,11 @@
             conn
             (str "BEGIN TRANSACTION "
                  "INSERT INTO " keyspace "." table-name
+                 ; Weirdly,
+                 ; https://docs.yugabyte.com/stable/api/ycql/dml_transaction/
+                 ; says (twice!) that transactions may not have any IF
+                 ; expressions in their INSERTs, UPDATEs, or DELETEs. So... why
+                 ; does this not throw?
                  " (id, balance) VALUES (" to "," amount ") IF NOT EXISTS ELSE ERROR;"
 
                  "UPDATE " keyspace "." table-name

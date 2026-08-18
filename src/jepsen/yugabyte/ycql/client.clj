@@ -346,17 +346,23 @@
                (assoc ~op :type :fail :error [:no-host-available (.getMessage e#)]))
            (assoc ~op :type crash#, :error [:no-host-available (.getMessage e#)])))
 
+       (catch InvalidQueryException e#
+         ; This can actually mean timeout
+         (let [msg# (.getMessage e#)]
+           (condp re-find msg#
+             #"Condition on table .+ was not satisfied"
+             (assoc ~op :type :fail, :error [:condition-not-satisfied])
+
+             #"RPC to .+ timed out after "
+             (assoc ~op :type crash#, :error [:rpc-timed-out (.getMessage e#)])
+
+             (throw e#))))
+
        (catch DriverException e#
          (if (re-find #"Value write after transaction start|Conflicts with higher priority transaction|Conflicts with committed transaction|Operation expired: Failed UpdateTransaction.* status: COMMITTED .*: Transaction expired|Error parsing schema for table"
                       (.getMessage e#))
            ; Definitely failed
            (assoc ~op :type :fail, :error (.getMessage e#))
-           (throw e#)))
-
-       (catch InvalidQueryException e#
-         ; This can actually mean timeout
-         (if (re-find #"RPC to .+ timed out after " (.getMessage e#))
-           (assoc ~op :type crash#, :error [:rpc-timed-out (.getMessage e#)])
            (throw e#))))))
 
 ;; ---- Client macro ----
