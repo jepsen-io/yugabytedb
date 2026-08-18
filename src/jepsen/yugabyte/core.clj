@@ -89,7 +89,6 @@
      ; allow negative balances.
      :bank            bank/workload-allow-neg             (ycql.bank/->Client)
      :bank-inserts    bank-improved/workload-with-inserts (ycql.bank-improved/->Client)
-     :bank-multitable bank/workload-allow-neg             (ycql.bank/->MultiClient)
      :counter         counter/workload                    (ycql.counter/->Client)
      :long-fork       long-fork/workload                  (ycql.long-fork/->Client)
      :monotonic       monotonic/workload                  (ycql.monotonic/->Client)
