@@ -6,6 +6,7 @@
              [generator :as gen]
              [random :as random]
              [tests :as tests]
+             [util :refer [map-vals]]
              [sql :as sql]]
             [jepsen.os.debian :as debian]
             [jepsen.os.centos :as centos]
@@ -25,7 +26,6 @@
              [set :as set]
              [single-key-acid :as single-key-acid]
              [types :as types]
-             [utils :as utils :refer :all]
              [wr :as wr]]
             [jepsen.yugabyte.ycql
              [bank :as ycql.bank]
@@ -138,9 +138,9 @@
 (def workload-options
   "For each workload, a map of workload options to all the values that option
   supports. Used for test-all."
-  (merge (map-values workloads-ycql   (constantly {}))
-         (map-values workloads-ysql   (constantly {}))
-         (map-values workloads-jsql   (constantly {}))))
+  (merge (map-vals (constantly {}) workloads-ycql)
+         (map-vals (constantly {}) workloads-ysql)
+         (map-vals (constantly {}) workloads-jsql)))
 
 (def workload-options-expected-to-pass
   "Only workloads and options that we think should pass. Also used for

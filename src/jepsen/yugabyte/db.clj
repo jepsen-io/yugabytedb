@@ -15,9 +15,7 @@
             [jepsen.control.net :as cn]
             [jepsen.control.util :as cu]
             [jepsen.os.debian :as debian]
-            [jepsen.yugabyte
-             [util :refer [parse-version]]
-             [utils :as utils]]
+            [jepsen.yugabyte [util :refer [parse-version]]]
             [version-clj.core :as v]
             [jepsen.yugabyte.ycql.client :as ycql.client]
             [jepsen.yugabyte.ysql.client :as ysql.client]
@@ -434,7 +432,7 @@
     [:--skip_prefix_locks=false]
     []))
 
-(defn tserver-append-table-flags
+(defn tserver-table-lock-flags
   "append-table workload flags: transactional DDL, table-level object locking,
   and concurrent DDL. All three are preview-gated, so they're added to
   allowed_preview_flags_csv (apply-extra-gflags collapses this into a single
@@ -445,18 +443,18 @@
   ; https://docs.yugabyte.com/stable/explore/transactions/explicit-locking/
   ; suggests that DML and DDL could run concurrently and maybe that messes
   ; things up?
-  (if (utils/is-test-append-table? test)
+  (if (:table-locks test)
     [:--allowed_preview_flags_csv "enable_object_locking_for_table_locks,ysql_yb_ddl_transaction_block_enabled,ysql_enable_concurrent_ddl"
      :--ysql_yb_ddl_transaction_block_enabled
      :--enable_object_locking_for_table_locks
      :--ysql_enable_concurrent_ddl]
     []))
 
-(defn master-append-table-flags
+(defn master-table-lock-flags
   "Object locking is coordinated through the master, so the table-lock flag and
   its preview allow-list entry must be present on the master as well."
   [test]
-  (if (utils/is-test-append-table? test)
+  (if (:table-locks test)
     [:--allowed_preview_flags_csv "enable_object_locking_for_table_locks,ysql_yb_ddl_transaction_block_enabled"
      :--ysql_yb_ddl_transaction_block_enabled
      :--enable_object_locking_for_table_locks]
@@ -773,11 +771,10 @@
                (experimental-tuning-flags test)
                (geo-partitioning-flags test node (:nodes test))
                (master-api-flags (:api test) node)
-               (master-append-table-flags test)
                (master-perf-flags test)
                (master-stress-flags test)
                (packed-columns-flags test)
-               ]
+               (master-table-lock-flags test)]
               (:master-flags test)))))
 
   (start-tserver! [db test node]
@@ -799,13 +796,13 @@
                (packed-columns-flags test)
                (random-clock-skew-flags test node)
                (tserver-api-flags test node)
-               (tserver-append-table-flags test)
                (tserver-connection-manager-preview-flags test)
                (tserver-heartbeat-flags test)
                (tserver-perf-flags test)
                (tserver-read-committed-flags test)
                (tserver-serializable-flags test)
-               (tserver-stress-flags test)]
+               (tserver-stress-flags test)
+               (tserver-table-lock-flags test)]
               (:tserver-flags test)))))
 
   (stop-master! [db]

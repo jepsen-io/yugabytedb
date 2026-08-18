@@ -125,6 +125,8 @@
      [nil "--table-count INT" "Number of tables to spread rows across."
       :default 5]
 
+     [nil "--table-locks" "If set, enables table-level locks; an experimental feature. See https://docs.yugabyte.com/stable/explore/transactions/explicit-locking/#table-level-locks for details."]
+
      [nil "--url URL" "URL to Yugabyte tarball to install, has precedence over --version"
       :default nil]
 

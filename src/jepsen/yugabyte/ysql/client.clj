@@ -11,8 +11,7 @@
             [jepsen.reconnect :as rc]
             [dom-top.core :as dt]
             [wall.hack :as wh]
-            [slingshot.slingshot :refer [try+ throw+]]
-            [jepsen.yugabyte.utils :as yutil])
+            [slingshot.slingshot :refer [try+ throw+]])
   (:import (java.sql Connection)))
 
 (def default-timeout "Default timeout for operations in ms" 30000)
