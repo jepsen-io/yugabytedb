@@ -276,7 +276,7 @@
                               (doto (ThreadPoolExecutor.
                                       1 ; Core pool size
                                       1 ; Max pool size
-                                      30 ; How long to keep threads alive
+                                      5 ; How long to keep threads alive
                                       TimeUnit/SECONDS
                                       (LinkedBlockingQueue.)
                                       (.createThreadFactory

@@ -50,7 +50,7 @@
       (c/with-txn test c
         (assoc op :type :ok, :value (read-accounts-map test op c)))
 
-      :update
+      :transfer
       (c/with-txn test c
         (let [{:keys [from to amount]} (:value op)
               b-from-before (c/select-single-value op c table-name :balance (str "id = " from))
@@ -69,7 +69,7 @@
 
       :delete
       (c/with-txn test c
-        (let [{:keys [from to amount]} (:value op)
+        (let [{:keys [from to]} (:value op)
               b-from-before (c/select-single-value op c table-name :balance (str "id = " from))
               b-to-before (c/select-single-value op c table-name :balance (str "id = " to))]
           (cond

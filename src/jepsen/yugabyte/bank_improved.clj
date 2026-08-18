@@ -1,26 +1,18 @@
 (ns jepsen.yugabyte.bank-improved
-  "Reworked original bank workload that now include inserts and deletes.
-  Generator now throws dice in [:insert :delete :update]
+  "Reworked original bank workload that now include inserts and deletes. There
+  are three :f's:
 
-  :update behaves as default bank workload operation.
-
-  :insert there is 2 cases:
-  for YCQL (update-insert) insert key will be appended to the end of the list
-  for YSQL (update-insert-delete) inserted key will be chosen from contention-keys
-
-  :delete
-  for YCQL (update-insert) there is no way to transactional delete key
-  for YSQL (update-insert-delete) deleted key will be chosen from contention-keys"
-  (:refer-clojure :exclude
-                  [test])
+      :transfer - Transfer between two extant accounts
+      :insert   - Creates a new account, funded by another
+      :delete   - Deletes an account, transferring its balance to another"
+  (:refer-clojure :exclude [test])
   (:require [jepsen.tests.bank :as bank]
             [clojure.core.reducers :as r]
-            [jepsen
-             [history :as h]
-             [generator :as gen]
-             [checker :as checker]
-             [random :as random]
-             [util :as util]]))
+            [jepsen [history :as h]
+                    [generator :as gen]
+                    [checker :as checker]
+                    [random :as random]
+                    [util :as util]]))
 
 (def start-key 0)
 (def end-key 5)
@@ -35,49 +27,41 @@
   accounts. Added insert operation. Special case for YCQL. TODO: why can't we
   do deletes in YCQL?"
   [test process]
-  (let [dice (random/nth [:insert :update])]
-    (cond
-      (= dice :insert)
-      {:type  :invoke
-       :f     dice
-       :value {:from   (random/nth (:accounts test))
-               :to     (swap! insert-key-ctr inc)
-               :amount (+ 1 (random/long (:max-transfer test)))}}
+  (case (random/nth (:operations test))
+    :insert
+    {:f     :insert
+     :value {:from   (random/nth (:accounts test))
+             :to     (swap! insert-key-ctr inc)
+             :amount (+ 1 (random/long (:max-transfer test)))}}
 
-      (= dice :update)
-      {:type  :invoke
-       :f     dice
-       :value {:from   (random/nth (:accounts test))
-               :to     (random/nth (:accounts test))
-               :amount (+ 1 (random/long (:max-transfer test)))}})))
+    :transfer
+    {:f     :transfer
+     :value {:from   (random/nth (:accounts test))
+             :to     (random/nth (:accounts test))
+             :amount (+ 1 (random/long (:max-transfer test)))}}))
 
 (defn transfer-contention-keys
   "Generator of a transfer: a random amount between two randomly selected
   accounts. A random amount between two randomly selected accounts with set of
   contention keys that may be inserted, deleted or updated."
   [test process]
-  (let [dice (random/nth (:operations test))]
-    (cond
-      (= dice :insert)
-      {:type  :invoke
-       :f     dice
-       :value {:from   (random/nth (:accounts test))
-               :to     (random/nth contention-keys)
-               :amount (+ 1 (random/long (:max-transfer test)))}}
+  (case (random/nth (:operations test))
+    :insert
+    {:f     :insert
+     :value {:from   (random/nth (:accounts test))
+             :to     (random/nth contention-keys)
+             :amount (+ 1 (random/long (:max-transfer test)))}}
 
-      (= dice :update)
-      {:type  :invoke
-       :f     dice
-       :value {:from   (random/nth (concat (:accounts test) contention-keys))
-               :to     (random/nth (concat (:accounts test) contention-keys))
-               :amount (+ 1 (random/long (:max-transfer test)))}}
+    :transfer
+    {:f     :transfer
+     :value {:from   (random/nth (concat (:accounts test) contention-keys))
+             :to     (random/nth (concat (:accounts test) contention-keys))
+             :amount (+ 1 (random/long (:max-transfer test)))}}
 
-      (= dice :delete)
-      {:type  :invoke
-       :f     dice
-       :value {:from   (random/nth contention-keys)
-               :to     (random/nth (:accounts test))
-               :amount (+ 1 (random/long (:max-transfer test)))}})))
+    :delete
+    {:f     :delete
+     :value {:from   (random/nth contention-keys)
+             :to     (random/nth (:accounts test))}}))
 
 (def diff-transfer-insert
   "Based on from original jepsen.tests.bank workload
@@ -155,23 +139,22 @@
   [opts]
   {:max-transfer 5
    :total-amount 100
+   :operations   [:insert :transfer]
    :accounts     (vec (range end-key))
    :checker      (checker/compose
-                   {:SI   (checker opts)
+                   {:bank (checker opts)
                     :plot (bank/plotter)})
    :generator    (gen/mix [diff-transfer-insert
                            bank/read])})
 
-; TODO: is the only difference here the presence of the :operations key? What
-; is that for?
 (defn workload-contention-keys
   [opts]
   {:max-transfer 5
    :total-amount 100
    :accounts     (vec (range end-key))
-   :operations   [:insert :update :delete]
+   :operations   [:insert :transfer :delete]
    :checker      (checker/compose
-                   {:SI   (checker opts)
+                   {:bank (checker opts)
                     :plot (bank/plotter)})
    :generator    (gen/mix [diff-transfer-contention
                            bank/read])})

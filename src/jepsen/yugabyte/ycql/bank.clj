@@ -5,11 +5,9 @@
   prevent negative balances in this workload."
   (:refer-clojure :exclude [test])
   (:require [clojure.tools.logging :refer [debug info warn]]
-            [jepsen.random :as random]
             [jepsen.yugabyte.ycql.client :as c]))
 
-(def setup-lock (Object.))
-(def keyspace   "jepsen")
+(def keyspace "jepsen")
 (def table-name "accounts")
 
 (c/defclient Client keyspace []
@@ -22,7 +20,7 @@
     (info "Creating accounts")
     (c/with-retry
       (c/insert! conn table-name
-                 {:id (first (:accounts test))
+                 {:id      (first (:accounts test))
                   :balance (:total-amount test)}
                  :keyspace keyspace)
       (doseq [a (rest (:accounts test))]
@@ -49,6 +47,19 @@
 
                  "UPDATE " keyspace "." table-name
                  " SET balance = balance + " amount " WHERE id = " to ";"
+                 "END TRANSACTION;"))
+          (assoc op :type :ok))
+
+        :insert
+        (let [{:keys [from to amount]} (:value op)]
+          (c/execute!
+            conn
+            (str "BEGIN TRANSACTION "
+                 "INSERT INTO " keyspace "." table-name
+                 " (id, balance) VALUES (" to "," amount ") IF NOT EXISTS ELSE ERROR;"
+
+                 "UPDATE " keyspace "." table-name
+                 " SET balance = balance - " amount " WHERE id = " from ";"
                  "END TRANSACTION;"))
           (assoc op :type :ok)))))
 

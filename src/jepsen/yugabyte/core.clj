@@ -26,7 +26,6 @@
                              [types           :as types]
                              [wr              :as wr]]
             [jepsen.yugabyte.ycql [bank            :as ycql.bank]
-                                  [bank-improved   :as ycql.bank-improved]
                                   [counter         :as ycql.counter]
                                   [long-fork       :as ycql.long-fork]
                                   [monotonic       :as ycql.monotonic]
@@ -83,7 +82,9 @@
     [; YCQL can't do reads or conditional writes in transactions, so we have to
      ; allow negative balances.
      :bank            bank/workload-allow-neg             (ycql.bank/->Client)
-     :bank-inserts    bank-improved/workload-with-inserts (ycql.bank-improved/->Client)
+     ; YCQL doesn't do reads in transactions, which we would need in order to
+     ; delete an account
+     :bank-inserts    bank-improved/workload-with-inserts (ycql.bank/->Client)
      :counter         counter/workload                    (ycql.counter/->Client)
      :long-fork       long-fork/workload                  (ycql.long-fork/->Client)
      :monotonic       monotonic/workload                  (ycql.monotonic/->Client)
