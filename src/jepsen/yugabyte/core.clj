@@ -62,16 +62,16 @@
 (defn workloads-builder
   "Many of our tests have a shared core workload which can be run with multiple
   clients. This takes a group name (e.g. :ysql) then a flat vector of
-  [workload-name, workload-fn, client] triples, and returns a map in which each
-  name maps to a workload function which calls the given workload function,
-  then associates the given client."
+  [workload-name, workload-fn, client-fn] triples, and returns a map in which
+  each name maps to a workload function which calls the given workload
+  function, then associates (client-fn)."
   [group-name triples]
   (assert (zero? (mod (count triples) 3)))
-  (reduce (fn [workload-map [workload-name workload-fn client]]
+  (reduce (fn [workload-map [workload-name workload-fn client-fn]]
             (assoc workload-map
                    (keyword (name group-name) (name workload-name))
                    (fn add-client [opts]
-                     (assoc (workload-fn opts) :client client))))
+                     (assoc (workload-fn opts) :client (client-fn)))))
           {}
           (partition 3 triples)))
 
@@ -81,40 +81,40 @@
     :ycql
     [; YCQL can't do reads or conditional writes in transactions, so we have to
      ; allow negative balances.
-     :bank            bank/workload-allow-neg  (ycql.bank/->Client)
+     :bank            bank/workload-allow-neg  ycql.bank/->Client
      ; YCQL doesn't do reads in transactions, which we would need in order to
      ; delete an account
      :bank-improved   bank-improved/workload-sans-deletes
-                      (ycql.bank/->Client)
-     :counter         counter/workload         (ycql.counter/->Client)
-     :long-fork       long-fork/workload       (ycql.long-fork/->Client)
-     :monotonic       monotonic/workload       (ycql.monotonic/->Client)
-     :multi-key-acid  multi-key-acid/workload  (ycql.multi-key-acid/->Client)
-     :set             set/workload             (ycql.set/->Client)
-     :set-index       set/workload             (ycql.set/->IndexClient)
-     :single-key-acid single-key-acid/workload (ycql.single-key-acid/->Client)
-     :types           types/workload           (ycql.types/->Client)]))
+                      ycql.bank/->Client
+     :counter         counter/workload         ycql.counter/->Client
+     :long-fork       long-fork/workload       ycql.long-fork/->Client
+     :monotonic       monotonic/workload       ycql.monotonic/->Client
+     :multi-key-acid  multi-key-acid/workload  ycql.multi-key-acid/->Client
+     :set             set/workload             ycql.set/->Client
+     :set-index       set/workload             ycql.set/->IndexClient
+     :single-key-acid single-key-acid/workload ycql.single-key-acid/->Client
+     :types           types/workload           ycql.types/->Client]))
 
 (def workloads-ysql
   "A map of workload names to functions that can take option maps and construct workloads."
   (workloads-builder
     :ysql
-    [:append          append/workload          (ysql.append/->Client)
-     :append-table    append/workload          (ysql.append-table/->Client)
-     :bank            bank/workload-allow-neg  (ysql.bank/->Client true)
-     :bank-improved   bank-improved/workload   (ysql.bank-improved/->Client)
-     :bank-multitable bank/workload-allow-neg  (ysql.bank/->Client true)
-     :counter         counter/workload         (ysql.counter/->Client)
-     :default-value   default-value/workload   (ysql.default-value/->Client)
-     :g2              g2/workload              (ysql.g2/->Client)
-     :long-fork       long-fork/workload       (ysql.long-fork/->Client)
-     :monotonic       monotonic/workload       (ysql.monotonic/->Client)
-     :multi-key-acid  multi-key-acid/workload  (ysql.multi-key-acid/->Client)
-     :set             set/workload             (ysql.set/->Client)
-     :set-index       set/workload             (ysql.set/->IndexClient)
-     :single-key-acid single-key-acid/workload (ysql.single-key-acid/->Client)
-     :types           types/workload           (ysql.types/->Client)
-     :wr              wr/workload              (ysql.wr/->Client)]))
+    [:append          append/workload          ysql.append/->Client
+     :append-table    append/workload          ysql.append-table/->Client
+     :bank            bank/workload-allow-neg  (partial ysql.bank/->Client true)
+     :bank-improved   bank-improved/workload   ysql.bank-improved/->Client
+     :bank-multitable bank/workload-allow-neg  (partial ysql.bank/->Client true)
+     :counter         counter/workload         ysql.counter/->Client
+     :default-value   default-value/workload   ysql.default-value/->Client
+     :g2              g2/workload              ysql.g2/->Client
+     :long-fork       long-fork/workload       ysql.long-fork/->Client
+     :monotonic       monotonic/workload       ysql.monotonic/->Client
+     :multi-key-acid  multi-key-acid/workload  ysql.multi-key-acid/->Client
+     :set             set/workload             ysql.set/->Client
+     :set-index       set/workload             ysql.set/->IndexClient
+     :single-key-acid single-key-acid/workload ysql.single-key-acid/->Client
+     :types           types/workload           ysql.types/->Client
+     :wr              wr/workload              ysql.wr/->Client]))
 
 (def workloads-jsql
   "Workloads from jepsen.sql"

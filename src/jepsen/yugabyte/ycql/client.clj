@@ -413,20 +413,21 @@
                              (and (list? expr)
                                   (= 'setup! (first expr))))
                            exprs))]
-    `(do (defrecord ~name ~(conj (vec fields) 'conn 'keyspace-created)
+    `(do (defrecord ~name ~(conj (vec fields) 'conn 'keyspace-created?)
            jepsen.client/Client
            (open! [~'this ~'test ~'node]
              (let [conn# (connect ~'node)]
-               (when (realized? ~'keyspace-created)
+               (when @~'keyspace-created?
                  (use-keyspace! conn# ~keyspace))
                (assoc ~'this :conn conn#)))
 
            (setup! [~'this ~'test]
-             (locking ~'keyspace-created
-               (ensure-keyspace! ~'conn ~keyspace ~'test)
-               (deliver ~'keyspace-created true)
-               (use-keyspace! ~'conn ~keyspace)
-               ~@setup-code))
+             (locking ~'keyspace-created?
+               (when-not @~'keyspace-created?
+                 (ensure-keyspace! ~'conn ~keyspace ~'test)
+                 (reset! ~'keyspace-created? true)))
+             (use-keyspace! ~'conn ~keyspace)
+             ~@setup-code)
 
            (close! [~'this ~'test]
              (disconnect! ~'conn))
@@ -437,7 +438,7 @@
          (defn ~(symbol (str "->" name))
            ~(vec fields)
            ; Pass user fields, conn, keyspace-created
-           (new ~name ~@fields nil (promise))))))
+           (new ~name ~@fields nil (atom false))))))
 
 ;; ---- Await setup ----
 
