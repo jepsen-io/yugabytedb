@@ -15,4 +15,4 @@
                  [version-clj "2.0.2"]
                  [clj-wallhack "1.0.1"]]
   :main jepsen.yugabyte.cli
-  :jvm-opts ["-Djava.awt.headless=true" "-Xms4g" "-Xmx10g"])
+  :jvm-opts ["-Djava.awt.headless=true" "-Xms4g" "-Xmx16g"])
