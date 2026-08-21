@@ -37,7 +37,8 @@
                   (fn [k]
                     (->> (gen/reserve n r
                                       (gen/mix [w cas cas]))
-                         (gen/process-limit 12))))
+                         (gen/process-limit 12)
+                         (gen/limit 16384))))
      :checker   (independent/checker
                   (checker/compose
                     {:timeline (timeline/html)
