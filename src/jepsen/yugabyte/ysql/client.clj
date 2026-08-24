@@ -1,6 +1,6 @@
 (ns jepsen.yugabyte.ysql.client
   "Helper functions for working with YSQL clients."
-  (:require [clojure.java.jdbc :as j]
+  (:require
             [clojure.pprint :refer [pprint]]
             [clojure.string :as str]
             [clojure.tools.logging :refer [info warn]]
@@ -9,7 +9,11 @@
             [jepsen.control.net :as cn]
             [jepsen.client :as client]
             [jepsen.reconnect :as rc]
+            [jepsen.sql.client :refer [with-logging]]
             [dom-top.core :as dt]
+            [next.jdbc :as j]
+            [next.jdbc [result-set :as rs]
+                       [sql :as sql]]
             [wall.hack :as wh]
             [slingshot.slingshot :refer [try+ throw+]])
   (:import (java.sql Connection)))
@@ -37,9 +41,18 @@
 (def max-retry-attempts
   "Maximum number of attempts to be performed by with-retry"
   30)
+
 (def max-delay-between-retries-ms
   "Maximum delay between retries for with-retry"
   200)
+
+(defn execute-opts
+  "Default options map for JDBC operations. We transform output to unqualified
+  lower keyword maps. Takes a map of options to override our own."
+  [opts]
+  (merge
+    {:builder-fn rs/as-unqualified-lower-maps}
+    opts))
 
 (def isolation-levels
   "Transaction isolation levels."
@@ -48,20 +61,6 @@
    :read-uncommitted Connection/TRANSACTION_READ_UNCOMMITTED
    :repeatable-read  Connection/TRANSACTION_REPEATABLE_READ
    :serializable     Connection/TRANSACTION_SERIALIZABLE})
-
-(defn db-spec
-  "Assemble a JDBC connection specification for a given Jepsen node."
-  [dbname user password node port]
-  {:dbtype         "yugabytedb"
-   :dbname         dbname
-   :classname      "com.yugabyte.Driver"
-   :host           (name node)
-   :port           port
-   :user           user
-   :password       password
-   :loginTimeout   (/ default-timeout 1000)
-   :connectTimeout (/ default-timeout 1000)
-   :socketTimeout  (/ default-timeout 1000)})
 
 (defn- append-op-index
   "Append /* <:op-index> */ to a given SQL statement or its part, useful while
@@ -72,47 +71,46 @@
     (update sql 0 (partial append-op-index op))
     (str sql " /* :op-index " (:index op) " */ ")))
 
-(defn query
-  "Like jdbc query, but includes a default timeout in ms.
-  If op is given, appends :op-index comment."
-  ([op conn sql-params]
-   (query conn (append-op-index op sql-params)))
-  ([conn sql-params]
-   (j/query conn sql-params {:timeout default-timeout})))
-
 (defn insert!
-  "Like jdbc insert!, but includes a default timeout and (optionally) :op-index comment."
+  "Like jdbc insert!, but includes a default timeout in ms and (optionally)
+  :op-index comment."
   ([op conn table values]
    (insert! conn (append-op-index op table) values))
   ([conn table values]
-   (j/insert! conn table values {:timeout default-timeout})))
+   (sql/insert! conn table values
+                (execute-opts {:timeout (/ default-timeout 1000)}))))
 
 (defn update!
-  "Like jdbc update!, but includes a default timeout and (optionally) :op-index
-  comment."
+  "Like jdbc update!, but includes a default timeout in ms and (optionally)
+  :op-index comment."
   ([op conn table values where]
    (update! conn (append-op-index op table) values where))
   ([conn table values where]
-   (j/update! conn table values where {:timeout default-timeout})))
+   (sql/update! conn table values where
+                (execute-opts {:timeout (/ default-timeout 1000)}))))
 
 (defn execute!
-  "Like jdbc execute!, but includes a default timeout and (optionally)
+  "Like jdbc execute!, but includes a default timeout in ms and (optionally)
   :op-index comment."
   ([op conn sql-params]
    ;(info sql-params)
    (execute! conn (append-op-index op sql-params)))
   ([conn sql-params]
    ;(info sql-params)
-   (j/execute! conn sql-params {:timeout default-timeout})))
+   (j/execute! conn sql-params
+               (execute-opts {:timeout (/ default-timeout 1000)}))))
 
 (defn select-first-row
-  "Selects a first row from table with a WHERE-clause, returning nil if no rows were found.
-  f op is given, appends :op-index comment to a query."
+  "Selects a first row from table with a WHERE-clause, returning nil if no rows
+  were found. f op is given, appends :op-index comment to a query."
   ([conn table-name where-clause]
    (select-first-row nil conn table-name where-clause))
   ([op conn table-name where-clause]
-   (let [query-string (str "SELECT * FROM " table-name " WHERE " where-clause " LIMIT 1")
-         query-res (query op conn query-string)
+   (let [query-string (str "SELECT * FROM " table-name " WHERE " where-clause
+                           " LIMIT 1")
+         query-res (if op
+                     (execute! op conn [query-string])
+                     (execute! conn [query-string]))
          res (first query-res)]
      res)))
 
@@ -122,98 +120,68 @@
   ([conn table-name column-kw where-clause]
    (select-single-value nil conn table-name column-kw where-clause))
   ([op conn table-name column-kw where-clause]
-   (let [query-string (str "SELECT " (name column-kw) " FROM " table-name " WHERE " where-clause " LIMIT 1")
-         query-res (query op conn query-string)
+   (let [query-string (str "SELECT " (name column-kw) " FROM " table-name
+                           " WHERE " where-clause " LIMIT 1")
+         query-res (if op
+                     (execute! op conn [query-string])
+                     (execute! conn [query-string]))
          res (get (first query-res) column-kw)]
      res)))
 
 (defn in
   "Constructs an SQL IN clause string"
   [coll]
-  (assert (not-empty coll) "Cannot create IN clause for empty values collection")
+  (assert (not-empty coll)
+          "Cannot create IN clause for empty values collection")
   (str "IN (" (str/join ", " coll) ")"))
 
-(defn open-conn
-  "Opens a connection to the given node."
-  [test dbname user password node port]
-  (let [spec  (db-spec dbname user password node port)
-        conn  (j/get-connection spec)
-        spec' (j/add-connection spec conn)
-        isolation (isolation-levels (:isolation test))]
-    (assert spec')
-    (.setTransactionIsolation conn isolation)
-    (assert (= (.getTransactionIsolation conn)
-               isolation))
-    (j/execute! spec' ["SET statement_timeout = '1s'"])
-    spec'))
-
-(defn open
+(defn open*
   "Given a test and node, opens a next.jdbc connection to it."
   [test node]
-  (open-conn test dbname user password node (ysql-port test)))
+  (-> {:dbtype         "yugabytedb"
+       :dbname         dbname
+       :classname      "com.yugabyte.Driver"
+       :host           node
+       :port           (ysql-port test)
+       :user           user
+       :password       password
+       :loginTimeout   (/ default-timeout 1000)
+       :connectTimeout (/ default-timeout 1000)
+       :socketTimeout  (/ default-timeout 1000)}
+      j/get-datasource
+      j/get-connection))
 
-(defn close-conn
-  "Given a JDBC connection, closes it and returns the underlying spec."
+(defn open
+  "Given a test and node, opens a next.jdbc connection to it. Sets the default
+  transaction isolation and statement timeout, and wraps it in logging."
+  [test node]
+  (let [conn (open* test node)
+        isolation (isolation-levels (:isolation test))]
+    (.setTransactionIsolation conn isolation)
+    (assert (= isolation (.getTransactionIsolation conn)))
+    (let [conn (with-logging test conn)]
+      (j/execute! conn ["SET statement_timeout = '1s'"])
+      conn)))
+
+(defn close-conn!
+  "Given a JDBC connection, closes it."
   [conn]
-  (when-let [c (j/db-find-connection conn)]
-    (.close c))
-  (dissoc conn :connection))
-
-(defn check-setup-successful
-  "Per-node probe: blocks until the YSQL port serves a real query as postgres.
-  With Connection Manager enabled, Odyssey takes ~30s after tserver start to
-  begin listening (connection refused before that), and its auth backend
-  can't read pg_authid until the system tablet leaves CREATING (auth rejected
-  / 'Tablet not running' until then). During setup every SQL-level failure is
-  transient, so retry any SQLException until the deadline, then declare setup
-  failed. Non-SQL throwables (e.g. interrupt on teardown) propagate."
-  [node test]
-  (let [port     (ysql-port test)
-        deadline (+ (System/currentTimeMillis) 120000)]
-    (info "Waiting for YSQL ready on" (str node ":" port))
-    (loop []
-      (let [ready?
-            (try
-              (let [spec (db-spec "postgres" "postgres" "" node port)
-                    conn (j/get-connection spec)]
-                (try
-                  (j/query (j/add-connection spec conn) ["SELECT 1"])
-                  true
-                  (finally (.close conn))))
-              (catch java.sql.SQLException e
-                (when (< deadline (System/currentTimeMillis))
-                  (throw+ {:type  :jepsen.db/setup-failed
-                           :node  node
-                           :cause (.getMessage e)}))
-                false))]
-        (if ready?
-          (do (info "YSQL ready on" node) :ready)
-          (do (Thread/sleep 500) (recur)))))))
-
-(defn conn-wrapper
-  "Constructs a network client for a node, and opens it"
-  [node test]
-  (rc/open!
-    (rc/wrapper
-      {:name  node
-       :open  (partial open test node)
-       :close close-conn
-       ; Do not log intermediate reconnection errors (if the reconnect fails, we'll still get it)
-       :log?  false})))
+  (j/on-connection [^Connection conn conn]
+                   (.close conn)))
 
 (defprotocol YSQLYbClient
   "Used by defclient macro in conjunction with jepsen.client/Client specifying
   actual logic"
 
-  (setup-cluster! [client test c conn-wrapper]
+  (setup-cluster! [client test conn]
     "Called once on a random node to set up database/cluster state for
     testing.")
 
-  (invoke-op! [client test operation c conn-wrapper]
+  (invoke-op! [client test operation conn]
     "Apply an operation to the client, returning an operation to be appended to
     the history.")
 
-  (teardown-cluster! [client test c conn-wrapper]
+  (teardown-cluster! [client test conn]
     "Called once on a random node to tear down the client/database/cluster when
     work is complete. If it throws retryable error, can be called again."))
 
@@ -371,18 +339,6 @@
   [c index-name]
   (execute! c (str "DROP INDEX " index-name)))
 
-(defmacro with-conn
-  "Like jepsen.reconnect/with-conn, but also asserts that the connection has
-  not been closed. If it has, throws an ex-info with :type :conn-not-ready.
-  Delays by 1 second to allow time for the DB to recover."
-  [[c conn-wrapper] & body]
-  `(rc/with-conn [~c ~conn-wrapper]
-                 (when (.isClosed (j/db-find-connection ~c))
-                   (Thread/sleep 1000)
-                   (throw (ex-info "Connection not yet ready."
-                                   {:type :conn-not-ready})))
-                 ~@body))
-
 (defmacro with-ddl-retry
   "YB loves to throw all kinds of exceptions for DDL operations, like
   encountering OID conflicts when creating multiple tables in a row, or
@@ -437,8 +393,9 @@
 (defmacro with-txn
   "Wrap evaluation within an SQL transaction using the test's isolation level."
   [test c & body]
-  `(j/with-db-transaction [~c ~c {:isolation (:isolation ~test)} ]
-                          ~@body))
+  `(j/with-transaction [~c ~c {:isolation (:isolation ~test)}]
+     (let [~c (with-logging ~test ~c)]
+       ~@body)))
 
 (defmacro with-errors
   "Takes an operation and a body. Evaluates body, catches exceptions, and maps
@@ -453,7 +410,7 @@
 (defn assert-involves-index
   "Verifies that executing given query uses index with the given name"
   [c query-str index-name]
-  (let [explanation (query c (str "EXPLAIN " query-str))
+  (let [explanation (execute! c [(str "EXPLAIN " query-str)])
         explanation-str (pr-str explanation)]
     (assert
       (.contains explanation-str index-name)
@@ -475,14 +432,14 @@
     (defrecord YSQLMyYbClient [arg1 arg2 arg3]
       c/YSQLYbClient
 
-      (setup-cluster! [this test c conn-wrapper]
+      (setup-cluster! [this test c conn]
         (do-stuff-once-with c))
 
-      (invoke-op! [this test op c conn-wrapper]
+      (invoke-op! [this test op c conn]
         (case (:f op)
           ...))
 
-      (teardown-cluster! [this test c conn-wrapper]
+      (teardown-cluster! [this test c conn]
         (c/drop-table c \"my-table\"))
 
 
@@ -514,45 +471,45 @@
     ; delegates logic to it, wrapping it into helper methods.
 
     ; KRK: why is this macro avoiding hygenic gensyms?
-    `(do (defrecord ~class-name [~'conn-wrapper ~'inner-client ~'setup? ~'teardown?]
+    `(do (defrecord ~class-name [~'conn ~'inner-client ~'setup? ~'teardown?]
            client/Client
 
            (open! [~'this ~'test ~'node]
-             (assoc ~'this :conn-wrapper (conn-wrapper ~'node ~'test)))
+             (assoc ~'this :conn (open ~'test ~'node)))
 
            (setup! [~'this ~'test]
              (once-per-cluster
                ~'setup?
                (info "Running setup")
+               ; We need longer timeouts for DDL. Creating an index on an empty
+               ; table can take multiple seconds!
+               (j/execute! ~'conn ["SET statement_timeout = '60s'"])
                (with-ddl-retry
-                 (with-conn
-                   [~'c ~'conn-wrapper]
-                   (setup-cluster! ~'inner-client ~'test ~'c ~'conn-wrapper)))
-               (info "Setup sucessful")))
+                 (setup-cluster! ~'inner-client ~'test ~'conn)))
+               (info "Setup sucessful"))
 
            (invoke! [~'this ~'test ~'op]
-             (with-conn [~'c ~'conn-wrapper]
-               (with-errors ~'op
-                 (invoke-op! ~'inner-client ~'test ~'op ~'c ~'conn-wrapper))))
+             (with-errors ~'op
+               (invoke-op! ~'inner-client ~'test ~'op ~'conn)))
 
            (teardown! [~'this ~'test]
              (once-per-cluster
                ~'teardown?
                (info "Running teardown")
+               ; Again, we'll give ourselves longer timeouts here.
+               (j/execute! ~'conn ["SET statement_timeout = '60s'"])
                (with-errors
                  (with-timeout
-                   (with-conn
-                     [~'c ~'conn-wrapper]
                      (with-retry
-                       (teardown-cluster! ~'inner-client ~'test ~'c ~'conn-wrapper)))))))
+                       (teardown-cluster! ~'inner-client ~'test ~'conn))))))
 
            (close! [~'this ~'test]
-             (rc/close! ~'conn-wrapper)))
+             (close-conn! ~'conn)))
 
-         ; Lastly, we redefine a ->Constructor helper for the newfound record, forcing it to take
-         ; the same arguments as inner-client-record.
-         ; We use those to construct inner-client-record and pass it to the
-         ; newfound record constructor.
+         ; Lastly, we redefine a ->Constructor helper for the newfound record,
+         ; forcing it to take the same arguments as inner-client-record. We use
+         ; those to construct inner-client-record and pass it to the newfound
+         ; record constructor.
 
          (defn ~(symbol (str "->" class-name))
            ~inner-ctor-args-vec

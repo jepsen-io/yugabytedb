@@ -1,6 +1,5 @@
 (ns jepsen.yugabyte.ysql.bank-improved
   (:require [version-clj.core :as v]
-            [clojure.java.jdbc :as j]
             [clojure.tools.logging :refer [info]]
             [jepsen [random :as rand]]
             [jepsen.yugabyte.ysql.client :as c]))
@@ -20,8 +19,8 @@
    (if (and enable-follower-reads (v/newer-or-equal? (:version test) minimal-follower-read-version))
      (c/execute! c ["SET yb_read_from_followers = true"]))
    (->>
-     (str "/*+ IndexOnlyScan(" table-name " " table-index ") */ SELECT id, balance FROM " table-name)
-     (c/query op c)
+     [(str "/*+ IndexOnlyScan(" table-name " " table-index ") */ SELECT id, balance FROM " table-name)]
+     (c/execute! op c)
      (map (juxt :id :balance))
      (into (sorted-map)))))
 
@@ -33,12 +32,11 @@
 (defrecord InternalClient []
   c/YSQLYbClient
 
-  (setup-cluster! [this test c conn-wrapper]
-    (c/execute! c
-                (j/create-table-ddl table-name
-                                    [[:id :int "PRIMARY KEY"]
-                                     [:balance :bigint]]))
-    (c/execute! c [(str "CREATE INDEX " table-index " ON " table-name " (id, balance)")])
+  (setup-cluster! [this test c]
+    (c/execute! c [(str "CREATE TABLE IF NOT EXISTS " table-name
+                        " (id INT PRIMARY KEY, balance BIGINT)")])
+    (c/execute! c [(str "CREATE INDEX " table-index " ON " table-name
+                        " (id, balance)")])
     (c/with-retry
       (info "Creating accounts")
       (c/insert! c table-name
@@ -49,7 +47,7 @@
                    {:id      acct,
                     :balance 0}))))
 
-  (invoke-op! [this test op c conn-wrapper]
+  (invoke-op! [this test op c]
     (case (:f op)
       :read
       (c/with-txn test c
@@ -116,7 +114,7 @@
               (c/insert! op c table-name {:id to, :balance amount})
               (assoc op :type :ok)))))))
 
-  (teardown-cluster! [this test c conn-wrapper]
+  (teardown-cluster! [this test c]
     (c/drop-table c table-name)))
 
 (c/defclient Client InternalClient)

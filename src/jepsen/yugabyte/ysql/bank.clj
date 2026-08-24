@@ -1,6 +1,5 @@
 (ns jepsen.yugabyte.ysql.bank
-  (:require [clojure.java.jdbc :as j]
-            [clojure.tools.logging :refer [debug info warn]]
+  (:require [clojure.tools.logging :refer [debug info warn]]
             [jepsen.random :as random]
             [jepsen.yugabyte.ysql.client :as c]))
 
@@ -14,21 +13,23 @@
   [op c]
   (let [use-index? (random/bool)]
     (info table-name (if use-index? "IndexOnlyScan" "SeqScan"))
-    (->> (str (when use-index?
-                (str "/*+ IndexOnlyScan(" table-name " " index-name ") */ "))
-              "SELECT id, balance FROM " table-name)
-         (c/query op c)
+    (->> [(str (when use-index?
+                 (str "/*+ IndexOnlyScan(" table-name " " index-name ") */ "))
+               "SELECT id, balance FROM " table-name)]
+         (c/execute! op c)
          (map (juxt :id :balance))
          (into (sorted-map)))))
 
 (defrecord InternalClient [allow-negatives?]
   c/YSQLYbClient
 
-  (setup-cluster! [this test c conn-wrapper]
-    (c/execute! c (j/create-table-ddl table-name [[:id :int "PRIMARY KEY"]
-                                                  [:balance :bigint]]))
-    (c/execute! c (str "CREATE INDEX " index-name " ON " table-name
-                       " (id, balance)"))
+  (setup-cluster! [this test c]
+    (c/execute!
+      c
+      [(str "CREATE TABLE IF NOT EXISTS " table-name
+            " (id INT PRIMARY KEY, balance BIGINT)")])
+    (c/execute! c [(str "CREATE INDEX " index-name " ON " table-name
+                        " (id, balance)")])
     (c/with-retry
       (info "Creating accounts")
       (c/insert! c table-name {:id      (first (:accounts test))
@@ -38,7 +39,7 @@
                                  :balance 0}))))
 
 
-  (invoke-op! [this test op c conn-wrapper]
+  (invoke-op! [this test op c]
     (case (:f op)
       :read
       (assoc op :type :ok, :value (read-accounts-map op c))
@@ -62,7 +63,7 @@
               (assoc op :type :fail, :error [:negative from b-from-after])))))))
 
 
-  (teardown-cluster! [this test c conn-wrapper]
+  (teardown-cluster! [this test c]
     (c/drop-table c table-name)))
 
 (c/defclient Client InternalClient)
@@ -75,7 +76,7 @@
 (defrecord InternalMultiClient [allow-negatives?]
   c/YSQLYbClient
 
-  (setup-cluster! [this test c conn-wrapper]
+  (setup-cluster! [this test c]
 
     (doseq [a (:accounts test)]
       (let [acc-table-name (str table-name a)
@@ -84,9 +85,12 @@
                              (:total-amount test)
                              0)]
         (info "Creating table" a)
-        (c/execute! c (j/create-table-ddl acc-table-name [[:id :int "PRIMARY KEY"]
-                                                          [:balance :bigint]]))
-        (c/execute! c (str "CREATE INDEX " acc-index-name " ON " acc-table-name " (id, balance)"))
+        (c/execute!
+          c
+          [(str "CREATE TABLE IF NOT EXISTS " acc-table-name
+                " (id INT PRIMARY KEY, balance BIGINT)")])
+        (c/execute! c
+                    [(str "CREATE INDEX " acc-index-name " ON " acc-table-name " (id, balance)")])
 
         (info "Populating account" a " (balance =" balance ")")
         (c/with-retry
@@ -94,7 +98,7 @@
                                        :balance balance})))))
 
 
-  (invoke-op! [this test op c conn-wrapper]
+  (invoke-op! [this test op c]
     (case (:f op)
       :read
       (c/with-txn test c
@@ -106,7 +110,7 @@
                              use-index? (zero? (random/long 2))]
                          (info tbl (if use-index? "IndexOnlyScan" "SeqScan"))
                          (if use-index?
-                           (-> (c/query op c (str "/*+ IndexOnlyScan(" tbl " " idx ") */ SELECT balance FROM " tbl " WHERE id = " a))
+                           (-> (c/execute! op c [(str "/*+ IndexOnlyScan(" tbl " " idx ") */ SELECT balance FROM " tbl " WHERE id = " a)])
                                first :balance)
                            (c/select-single-value op c tbl :balance (str "id = " a))))))
                (zipmap accs)
@@ -126,7 +130,7 @@
                   (assoc op :type :ok)
                   (assoc op :type :fail, :error [:negative from b-from-after]))))))))
 
-  (teardown-cluster! [this test c conn-wrapper]
+  (teardown-cluster! [this test c]
     (doseq [a (:accounts test)]
       (c/drop-table c (str table-name a)))))
 

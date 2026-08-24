@@ -5,11 +5,11 @@
   value of the given list is). We detect cycles in these transactions using
   Jepsen's cycle-detection system."
   (:require [clojure.string :as str]
-            [clojure.java.jdbc :as j]
             [clojure.tools.logging :refer [info]]
             [jepsen.random :as random]
             [jepsen.yugabyte.db :as db]
-            [jepsen.yugabyte.ysql.client :as c]))
+            [jepsen.yugabyte.ysql.client :as c]
+            [next.jdbc :as j]))
 
 (defn table-count
   "How many tables do we need for a test?"
@@ -41,7 +41,11 @@
 (defn select-with-optional-lock
   [locking col table]
   (let [clause (if (= :pessimistic locking)
-                 (random/nth ["" " for update" " for no key update" " for share" " for key share"])
+                 (random/nth [""
+                              " for update"
+                              " for no key update"
+                              " for share"
+                              " for key share"])
                  "")]
     (str "select (" col ") from " table " where k = ?" clause)))
 
@@ -77,13 +81,13 @@
   "Reads a key based on primary key"
   [locking conn table row col]
   (some-> conn
-          (c/query [(select-with-optional-lock locking col table) row])
+          (c/execute! [(select-with-optional-lock locking col table) row])
           first
           (get (keyword col))
           (str/split #",")
           (->> ; Append might generate a leading , if the row already exists
-            (remove str/blank?)
-            (mapv #(Long/parseLong %)))))
+               (remove str/blank?)
+               (mapv #(Long/parseLong %)))))
 
 (defn append-primary!
   "Writes a key based on primary key."
@@ -92,13 +96,16 @@
             (do
               ; Randomly evaluate SELECT FOR UPDATE with timeout in case of
               ; pessimistic locking
-              (c/query conn [(select-with-optional-lock locking col table) row])
+              (c/execute! conn [(select-with-optional-lock locking col table)
+                                row])
+              ; TODO: look at these times
               (Thread/sleep (long (random/long 2000))))
             nil)
         r (c/execute! conn [(str "update " table
                                  " set " col " = CONCAT(" col ", ',', ?)"
-                                 " where k = ? " (geo-row-update test row)) v row])]
-    (when (= [0] r)
+                                 " where k = ? " (geo-row-update test row))
+                            v row])]
+    (when (zero? (:next.jdbc/update-count (first r)))
       ; No rows updated
       (if (:geo-partition test)
         (insert-primary-geo test conn table col row v (str (+' (mod row 2) 1) "a"))
@@ -108,9 +115,11 @@
   "Reads a key based on a predicate over a secondary key, k2"
   [conn table row col]
   (some-> conn
-          (c/query [(str "select (" col ") from " table
-                         " where (k2 * 2) - ? = ?")
-                    col col])
+          ; TODO: what... is going on with this "col" here? That's not a
+          ; column, is it?
+          (c/execute! [(str "select (" col ") from " table
+                            " where (k2 * 2) - ? = ?")
+                       col col])
           first
           (get (keyword col))
           (str/split #",")
@@ -119,17 +128,22 @@
 (defn read-via-index
   "Reads a key using secondary index on k2"
   [locking conn table row col]
+  ; TODO: we can condense this with the other locking clause right?
   (let [clause (if (= :pessimistic locking)
-                 (random/nth ["" " for update" " for no key update" " for share" " for key share"])
+                 (random/nth [""
+                              " for update"
+                              " for no key update"
+                              " for share"
+                              " for key share"])
                  "")]
     (some-> conn
-            (c/query [(str "select (" col ") from " table " where k2 = ?" clause) row])
+            (c/execute! [(str "select (" col ") from " table
+                              " where k2 = ?" clause) row])
             first
             (get (keyword col))
             (str/split #",")
-            (->>
-              (remove str/blank?)
-              (mapv #(Long/parseLong %))))))
+            (->> (remove str/blank?)
+                 (mapv #(Long/parseLong %))))))
 
 (defn append-secondary!
   "Writes a key based on a predicate over a secondary key, k2. Returns v."
@@ -137,7 +151,7 @@
   (let [r (c/execute! conn [(str "update " table
                                  " set " col " = CONCAT(" col ", ',', ?) "
                                  "where (k2 * 2) - ? = ?") v row row])]
-    (when (= [0] r)
+    (when (= [{:next.jdbc/update-count 0}] r)
       ; No rows updated
       (c/execute! conn
                   [(str "insert into " table
@@ -166,15 +180,17 @@
            (append-primary! test locking conn table row col v))]))
 
 (defn create-table-columns-clause
-  "Takes a test and returns a vector of columns for use with create-table-ddl."
+  "Takes a test and returns a string of columns for use with CREATE TABLE."
   [test]
-  (if (:geo-partition test)
-    [[:k :int]
-     [:k2 :int]
-     [:geo_partition :varchar]]
-    [;[:k :int "unique"]
-     [:k :int "PRIMARY KEY"]
-     [:k2 :int]]))
+  (str
+    (if (:geo-partition test)
+      "k INT, k2 INT, geo_partition VARCHAR"
+      "k INT PRIMARY KEY, k2 INT")
+    ", "
+    ; Values
+    (->> (range keys-per-row)
+         (map (fn [i] (str (col-for test i) " TEXT")))
+         (str/join ", "))))
 
 (defn table-spec
   [test]
@@ -185,11 +201,11 @@
 (defn create-partitioning-table
   [c table postfix]
   (info (str "Create table partitions for " table "_" postfix))
-  (c/execute! c (str "CREATE TABLE " table "_" postfix " "
+  (c/execute! c [(str "CREATE TABLE " table "_" postfix " "
                      "PARTITION OF " table " (k, k2, geo_partition"
                      ", PRIMARY KEY (k, geo_partition)) FOR VALUES IN ('"
                      postfix "') "
-                     "TABLESPACE " db/tablespace-name "_" postfix)))
+                     "TABLESPACE " db/tablespace-name "_" postfix)]))
 
 (defn resolve-locking
   "Resolves locking mode for a transaction. :mixed randomly picks :optimistic
@@ -203,28 +219,26 @@
 (defrecord InternalClient []
   c/YSQLYbClient
 
-  (setup-cluster! [this test c conn-wrapper]
+  (setup-cluster! [this test c]
     (->> (range (table-count test))
          (map table-name)
          (map (fn [table]
                 (info "Creating table" table)
-                (c/execute! c (j/create-table-ddl
-                                table
-                                (into
-                                  (create-table-columns-clause test)
-                                  ; Columns for n values packed in this row
-                                  (map (fn [i] [(col-for test i) :text])
-                                       (range keys-per-row)))
-                                {:conditional? true
-                                 :table-spec   (table-spec test)}))
+                (j/execute!
+                  c
+                  [(str "CREATE TABLE IF NOT EXISTS " table " ("
+                        (create-table-columns-clause test)
+                        ")"
+                        (when (:geo-partition test)
+                          " PARTITION BY LIST (geo_partition)"))])
                 (if (:geo-partition test)
                   (do (create-partitioning-table c table "1a")
                       (create-partitioning-table c table "2a"))
-                  (c/execute! c (str "CREATE INDEX idx_" table " ON "
-                                     table " (k2)")))))
+                  (j/execute! c [(str "CREATE INDEX idx_" table " ON "
+                                      table " (k2)")]))))
          dorun))
 
-  (invoke-op! [this test op c conn-wrapper]
+  (invoke-op! [this test op c]
     (let [txn (:value op)
           use-txn? (< 1 (count txn))
           resolved-locking (resolve-locking test)

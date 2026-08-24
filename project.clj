@@ -9,7 +9,6 @@
                  [io.jepsen/sql "0.1.1-SNAPSHOT"]
                  [com.yugabyte/cassandra-driver-core "3.10.3-yb-3"]
                  [org.slf4j/slf4j-api "2.0.17"]
-                 [org.clojure/java.jdbc "0.7.12"]
                  [org.clojure/data.json "2.4.0"]
                  [com.yugabyte/jdbc-yugabytedb "42.3.5-yb-3"]
                  [version-clj "2.0.2"]

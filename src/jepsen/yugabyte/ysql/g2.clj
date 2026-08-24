@@ -9,8 +9,7 @@
   through the index is deliberate: Adya notes a DB may serialize on primary
   keys yet let an index observe stale data, which is exactly the write skew this
   detects. The checker flags any key for which more than one insert committed."
-  (:require [clojure.java.jdbc :as j]
-            [jepsen.yugabyte.ysql.client :as c]))
+  (:require [jepsen.yugabyte.ysql.client :as c]))
 
 (def table-a "g2_a")
 (def table-b "g2_b")
@@ -20,22 +19,21 @@
 (defn predicate-nonempty?
   "Does `table` have any row for this key matching value%3=0, read via `index`?"
   [conn table index k]
-  (boolean (seq (c/query conn [(str "/*+ IndexScan(" table " " index ") */ "
+  (boolean (seq (c/execute! conn [(str "/*+ IndexScan(" table " " index ") */ "
                                     "select id from " table
                                     " where key = ? and value % 3 = 0") k]))))
 
 (defrecord InternalClient []
   c/YSQLYbClient
 
-  (setup-cluster! [this test c conn-wrapper]
+  (setup-cluster! [this test c]
     (doseq [[t idx] [[table-a index-a] [table-b index-b]]]
-      (c/execute! c (j/create-table-ddl t [[:id :int "PRIMARY KEY"]
-                                           [:key :int]
-                                           [:value :int]]
-                                        {:conditional? true}))
-      (c/execute! c (str "CREATE INDEX " idx " ON " t " (key) INCLUDE (value)"))))
+      (c/execute! c [(str "CREATE TABLE IF NOT EXISTS " t
+                          "(id INT PRIMARY KEY, key INT, value INT)")])
+      (c/execute! c [(str "CREATE INDEX " idx " ON " t
+                         " (key) INCLUDE (value)")])))
 
-  (invoke-op! [this test op c conn-wrapper]
+  (invoke-op! [this test op c]
     (let [[k [a-id b-id]] (:value op)]
       (c/with-txn test c
         (if (or (predicate-nonempty? c table-a index-a k)
@@ -48,7 +46,7 @@
               (c/execute! c [(str "insert into " table-b " (id, key, value) values (?, ?, 30)") b-id k]))
             (assoc op :type :ok))))))
 
-  (teardown-cluster! [this test c conn-wrapper]
+  (teardown-cluster! [this test c]
     (c/drop-table c table-a)
     (c/drop-table c table-b)))
 

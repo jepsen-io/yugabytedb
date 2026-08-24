@@ -1,6 +1,5 @@
 (ns jepsen.yugabyte.ysql.long-fork
-  (:require [clojure.java.jdbc :as j]
-            [jepsen.tests.long-fork :as lf]
+  (:require [jepsen.tests.long-fork :as lf]
             [jepsen.yugabyte.ysql.client :as c]))
 
 (def table-name "long_fork")
@@ -8,30 +7,29 @@
 
 (defn long-fork-index-query
   [key-seq]
-  (str "SElECT key2, val FROM " table-name " WHERE key2 " (c/in key-seq)))
+  [(str "SElECT key2, val FROM " table-name " WHERE key2 " (c/in key-seq))])
 
 (defrecord InternalClient []
   c/YSQLYbClient
 
-  (setup-cluster! [this test c conn-wrapper]
-    (c/execute! c (j/create-table-ddl table-name [[:key :int "PRIMARY KEY"]
-                                                  [:key2 :int]
-                                                  [:val :int]]))
-
-    (c/execute! c (str "CREATE INDEX " index-name " ON " table-name " (key2) INCLUDE (val)"))
+  (setup-cluster! [this test c]
+    (c/execute! c [(str "CREATE TABLE IF NOT EXISTS " table-name
+                        "(key INT PRIMARY KEY, key2 INT, val INT)")])
+    (c/execute! c [(str "CREATE INDEX " index-name " ON " table-name
+                        " (key2) INCLUDE (val)")])
     ; Right now it DOESN'T involve index - but we run it anyway
     ; (c/assert-involves-index c (long-fork-index-query [1 2 3]) index-name)
     )
 
 
-  (invoke-op! [this test op c conn-wrapper]
+  (invoke-op! [this test op c]
     (let [txn (:value op)]
       (case (:f op)
         :read (c/with-txn test c
                 (let [ks   (seq (lf/op-read-keys op))
                       ; Look up values by the value index
                       vs   (->> (long-fork-index-query ks)
-                                (c/query op c)
+                                (c/execute! op c)
                                 (map (juxt :key2 :val))
                                 (into (sorted-map)))
                       ; Rewrite txn to use those values
@@ -48,7 +46,7 @@
                                                  :val  v})
                      (assoc op :type :ok))))))
 
-  (teardown-cluster! [this test c conn-wrapper]
+  (teardown-cluster! [this test c]
     (c/drop-index c index-name)
     (c/drop-table c table-name)))
 

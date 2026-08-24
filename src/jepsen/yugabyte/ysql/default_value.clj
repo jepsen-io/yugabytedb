@@ -9,8 +9,7 @@
   value of `0` to an existing table, and execute concurrent inserts into the
   table, and concurrent reads, looking for cases where the column exists, but
   its value is `null` instead."
-  (:require [clojure.java.jdbc :as j]
-            [clojure.tools.logging :refer [info]]
+  (:require [clojure.tools.logging :refer [info]]
             [jepsen.yugabyte.ysql.client :as c]))
 
 (def table "foo")
@@ -23,23 +22,22 @@
 (defn read-ordered
   "Reads every value in table ordered by k."
   [conn table]
-  (let [res (c/query conn [(str "select k, v from " table " order by k")])]
+  (let [res (c/execute! conn [(str "select k, v from " table " order by k")])]
     (mapv :v res)))
 
 (defn read-natural
   "Reads every value in table using natural ordering."
   [conn table]
-  (->> (c/query conn [(str "select (v) from " table)])))
+  (->> (c/execute! conn [(str "select (v) from " table)])))
 
 (defn create-table!
   "Creates a table for the given relation. Swallows already-exists errors,
   because YB can't do `create ... if not exists` properly."
   [conn table]
   (try
-    (c/execute! conn (j/create-table-ddl table
-                                         [[:dummy :int]
-                                          [:v :int :default "0"]]
-                                         {:conditional? true}))
+    (c/execute! conn
+                [(str "CREATE TABLE IF NOT EXISTS " table
+                      "(dummy INT, v INT DEFAULT 0)")])
     (catch com.yugabyte.util.PSQLException e
       (when-not (re-find #"already exists" (.getMessage e))
         (throw e)))))
@@ -47,7 +45,7 @@
 (defn drop-table!
   "Drops the given table."
   [conn table]
-  (c/execute! conn (j/drop-table-ddl table {:conditional? true})))
+  (c/execute! conn [(str "DROP TABLE IF EXISTS " table)]))
 
 (defn add-column!
   "Adds an integer column with a default to the given table."
@@ -92,9 +90,9 @@
 (defrecord InternalClient []
   c/YSQLYbClient
 
-  (setup-cluster! [this test c conn-wrapper])
+  (setup-cluster! [this test c])
 
-  (invoke-op! [this test op c conn-wrapper]
+  (invoke-op! [this test op c]
     (try
       (case (:f op)
         :read   (assoc op :type :ok, :value (read-natural c table))

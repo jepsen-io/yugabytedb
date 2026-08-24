@@ -17,6 +17,7 @@
                              [db              :as db]
                              [default-value   :as default-value]
                              [g2              :as g2]
+                             [jsql            :as jsql]
                              [long-fork       :as long-fork]
                              [monotonic       :as monotonic]
                              [multi-key-acid  :as multi-key-acid]
@@ -116,25 +117,18 @@
      :types           types/workload           ysql.types/->Client
      :wr              wr/workload              ysql.wr/->Client]))
 
-(def workloads-jsql
-  "Workloads from jepsen.sql"
-  (update-keys (jepsen.sql/workloads
-                 {:open ysql.client/open
-                  :error-fn ysql.client/error-fn})
-               (fn [k] (keyword "jsql" (name k)))))
-
 (def workloads
   "All workloads: a map of keywords to workload-constructing functions."
   (merge workloads-ycql
          workloads-ysql
-         workloads-jsql))
+         jsql/workloads))
 
 (def workload-options
   "For each workload, a map of workload options to all the values that option
   supports. Used for test-all."
   (merge (map-vals (constantly {}) workloads-ycql)
          (map-vals (constantly {}) workloads-ysql)
-         (map-vals (constantly {}) workloads-jsql)))
+         (map-vals (constantly {}) jsql/workloads)))
 
 (def workload-options-expected-to-pass
   "Only workloads and options that we think should pass. Also used for

@@ -18,7 +18,7 @@
             [jepsen.yugabyte [util :refer [parse-version]]]
             [version-clj.core :as v]
             [jepsen.yugabyte.ycql.client :as ycql.client]
-            [jepsen.yugabyte.ysql.client :as ysql.client]
+            [jepsen.yugabyte.ysql.client :as ysql.client :refer [ysql-port]]
             [slingshot.slingshot :refer [try+ throw+]])
   (:import jepsen.os.debian.Debian
            jepsen.os.centos.CentOS))
@@ -268,6 +268,15 @@
         #"Not the leader" (retry (dec tries))
         (throw e)))))
 
+(defn await-ysqlsh
+  "Blocks until we can execute commands using ysqlsh."
+  [test node]
+  (util/await-fn (fn [] (ysqlsh test node :-c (str "SELECT TRUE;")))
+                 {:retry-interval 500
+                  :log-interval 10000
+                  :log-message "Waiting for YSQL"
+                  :timeout 120000}))
+
 (defn start!
   "Start both master and tserver. Only starts master if this node is a master
   node. Waits for masters and tservers."
@@ -281,12 +290,14 @@
   (start-tserver! db test node)
   (await-tservers test)
 
+  (await-ysqlsh test node)
+
   (case (:api test)
     :ycql
     (ycql.client/await-setup node)
 
     :ysql
-    (ysql.client/check-setup-successful node test))
+    (cu/await-tcp-port (cn/ip node) (ysql-port test) {}))
 
   :started)
 
@@ -837,8 +848,8 @@
                                " WITH colocated = true"
                                "")]
         (ysqlsh test node :-c (str "DROP DATABASE IF EXISTS jepsen;"))
-        (ysqlsh test node :-c (str "DROP USER IF EXISTS jepsen;
-                                                CREATE USER jepsen createdb;"))
+        (ysqlsh test node :-c (str "DROP USER IF EXISTS jepsen; "
+                                   "CREATE USER jepsen createdb; "))
         (ysqlsh test node :-U "jepsen" :-c (str "CREATE DATABASE jepsen" colocated-clause ";"))
         (if (:geo-partition test)
           (do

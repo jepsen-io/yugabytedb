@@ -14,8 +14,7 @@
   they might not reflect commit orders, and there's no way to get (presently)
   txn commit times. We can use COUNT(*), but that reads the whole table... Not
   sure what to do here."
-  (:require [clojure.java.jdbc :as j]
-            [clojure.tools.logging :refer [info]]
+  (:require [clojure.tools.logging :refer [info]]
             [jepsen.random :as random]
             [jepsen.yugabyte.ysql.client :as c]))
 
@@ -28,7 +27,7 @@
   "Inserts a row with value v into a table, returning v. Key is derived from
   the count of rows in the table."
   [conn table v]
-  (let [k (-> (c/query conn [(str "select count(*) from " table)])
+  (let [k (-> (c/execute! conn [(str "select count(*) from " table)])
               first
               :count)]
     (c/execute! conn [(str "insert into " table " (k, v) values (?, ?)") k v])
@@ -62,14 +61,14 @@
         query-str (if use-index?
                     (str "/*+ IndexOnlyScan(" table " " idx ") */ select k, v from " table " order by k")
                     (str "select k, v from " table " order by k"))
-        res (c/query conn [query-str])]
+        res (c/execute! conn [query-str])]
     (info table (if use-index? "IndexOnlyScan" "SeqScan") "→" (mapv :v res))
     (mapv :v res)))
 
 (defn read-natural
   "Reads every value in table using natural ordering."
   [conn table]
-  (->> (c/query conn [(str "select (v) from " table)])
+  (->> (c/execute! conn [(str "select (v) from " table)])
        (mapv :v)))
 
 (defn create-table!
@@ -81,17 +80,18 @@
   [conn table-name]
   (info "Creating table" table-name)
   (try
-    (c/execute! conn (j/create-table-ddl table-name
-                                         [[:k :int "PRIMARY KEY"]
-                                          [:v :int]]
-                                         {:conditional? true}))
+    (c/execute!
+      conn
+      [(str "CREATE TABLE IF NOT EXISTS " table-name
+            " (k INT PRIMARY KEY, v INT)")])
     (info "Created table" table-name)
     (catch com.yugabyte.util.PSQLException e
       (if (re-find #"already exists" (.getMessage e))
         (info "Table" table-name "already exists")
         (throw e))))
   (try
-    (c/execute! conn (str "CREATE INDEX idx_" table-name " ON " table-name " (k, v)"))
+    (c/execute! conn [(str "CREATE INDEX idx_" table-name " ON " table-name
+                           " (k, v)")])
     (info "Created index for" table-name)
     (catch com.yugabyte.util.PSQLException e
       (if (re-find #"already exists" (.getMessage e))
@@ -140,9 +140,9 @@
 (defrecord InternalClient []
   c/YSQLYbClient
 
-  (setup-cluster! [this test c conn-wrapper])
+  (setup-cluster! [this test cd])
 
-  (invoke-op! [this test op c conn-wrapper]
+  (invoke-op! [this test op c]
     (with-table c
       (let [txn  (:value op)
             txn' (c/with-txn test c

@@ -33,9 +33,14 @@
                    (case (:f op)
                      :start-master  (auto/start-master!  db test node)
                      :start-tserver (do (auto/start-tserver! db test node)
-                                        (when (and (= :ysql (:api test))
-                                                   (:connection-manager test))
-                                          (ysql.client/check-setup-successful node test)))
+                                        ; I'm not sure why this is here.
+                                        ; Normally we don't want to block for
+                                        ; long on this sort of thing...
+                                        ;(when (and (= :ysql (:api test))
+                                        ;           (:connection-manager test))
+                                        ;  (ysql.client/check-setup-successful
+                                        ; node test)))
+                                        )
                      :stop-master   (auto/stop-master!   db)
                      :stop-tserver  (auto/stop-tserver!  db)
                      :kill-master   (auto/kill-master!   db)

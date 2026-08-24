@@ -9,8 +9,7 @@
     :w  write -> upsert (k2 mirrors k; writes are unique)
   Multi-op transactions run inside a JDBC transaction. Single-op transactions
   do not run in a transaction."
-  (:require [clojure.java.jdbc :as j]
-            [jepsen.random :as random]
+  (:require [jepsen.random :as random]
             [clojure.tools.logging :refer [info]]
             [jepsen.yugabyte.ysql.client :as c]))
 
@@ -27,7 +26,7 @@
                           "select v from " table-name " where k2 = ?")
                      (str "select v from " table-name " where k = ?"))]
     (info table-name (if use-index? "IndexOnlyScan(k2)" "PrimaryScan(k)") "k=" k)
-    (some-> conn (c/query [sql k]) first :v long)))
+    (some-> conn (c/execute! [sql k]) first :v long)))
 
 (defn write-register!
   "Upserts register k = v (k2 mirrors k). Returns v."
@@ -46,15 +45,13 @@
 (defrecord InternalClient []
   c/YSQLYbClient
 
-  (setup-cluster! [this test c conn-wrapper]
-    (c/execute! c (j/create-table-ddl table-name
-                                      [[:k :int "PRIMARY KEY"]
-                                       [:k2 :int]
-                                       [:v :int]]
-                                      {:conditional? true}))
-    (c/execute! c (str "CREATE INDEX " index-name " ON " table-name " (k2) INCLUDE (v)")))
+  (setup-cluster! [this test c]
+    (c/execute! c [(str "CREATE TABLE IF NOT EXISTS " table-name
+                        "(k INT PRIMARY KEY, k2 INT, v INT)")])
+    (c/execute! c [(str "CREATE INDEX " index-name " ON " table-name
+                        " (k2) INCLUDE (v)")]))
 
-  (invoke-op! [this test op c conn-wrapper]
+  (invoke-op! [this test op c]
     (let [txn      (:value op)
           use-txn? (< 1 (count txn))
           txn'     (if use-txn?
@@ -63,7 +60,7 @@
                      (mapv (partial mop! c) txn))]
       (assoc op :type :ok, :value txn')))
 
-  (teardown-cluster! [this test c conn-wrapper]
+  (teardown-cluster! [this test c]
     (c/drop-table c table-name)))
 
 (c/defclient Client InternalClient)

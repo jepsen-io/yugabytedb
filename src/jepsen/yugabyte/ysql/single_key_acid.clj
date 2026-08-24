@@ -1,6 +1,7 @@
 (ns jepsen.yugabyte.ysql.single-key-acid
-  (:require [clojure.java.jdbc :as j]
-            [clojure.tools.logging :refer [info]]
+  "A collection of independent registers, each of which supports linearizable
+  read, write, and compare-and-set."
+  (:require [clojure.tools.logging :refer [info]]
             [jepsen.independent :as independent]
             [jepsen.random :as random]
             [jepsen.yugabyte.ysql.client :as c]))
@@ -11,13 +12,13 @@
 (defrecord InternalClient []
   c/YSQLYbClient
 
-  (setup-cluster! [this test c conn-wrapper]
-    (c/execute! c (j/create-table-ddl table-name [[:id :int "PRIMARY KEY"]
-                                                  [:val :int]]))
-    (c/execute! c (str "CREATE INDEX " index-name " ON " table-name
-                       " (id, val)")))
+  (setup-cluster! [this test c]
+    (c/execute! c [(str "CREATE TABLE IF NOT EXISTS " table-name
+                        "(id INT PRIMARY KEY, val INT)")])
+    (c/execute! c [(str "CREATE INDEX " index-name " ON " table-name
+                        " (id, val)")]))
 
-  (invoke-op! [this test op c conn-wrapper]
+  (invoke-op! [this test op c]
     (let [[id val] (:value op)]
       (case (:f op)
         :write
@@ -48,7 +49,7 @@
                       [(str "UPDATE " table-name
                        " SET val = ? WHERE id = ? AND " table-name ".val = ?")
                        v' id v]))
-              applied (pos? (first res))]
+              applied (pos? (:next.jdbc/update-count (first res)))]
           (assoc op :type (if applied :ok :fail)))
 
         :read
@@ -56,16 +57,16 @@
               ;_ (info table-name (if use-index? "IndexOnlyScan" "SeqScan")
               ;        "id=" id)
               value (if use-index?
-                      (-> (c/query op c (str "/*+ IndexOnlyScan(" table-name
+                      (-> (c/execute! op c [(str "/*+ IndexOnlyScan(" table-name
                                              " " index-name
                                              ") */ SELECT val FROM " table-name
-                                             " WHERE id = " id))
+                                             " WHERE id = " id)])
                           first :val)
                       (c/select-single-value c table-name :val
                                              (str "id = " id)))]
           (assoc op :type :ok :value (independent/tuple id value))))))
 
-  (teardown-cluster! [this test c conn-wrapper]
+  (teardown-cluster! [this test c]
     (c/drop-table c table-name)))
 
 (c/defclient Client InternalClient)
