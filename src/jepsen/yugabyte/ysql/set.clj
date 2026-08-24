@@ -59,7 +59,7 @@
 
   (setup-cluster! [this test c]
     (c/execute! c [(str "CREATE TABLE IF NOT EXISTS " table-name
-                        " (id INT PRIAMRY KEY, val INT, grp INT)")])
+                        " (id INT PRIMARY KEY, val INT, grp INT)")])
     (c/execute! c [(str "CREATE INDEX " index-name " ON " table-name
                        " (grp) INCLUDE (val)")])
     (c/assert-involves-index c set-index-query index-name))
