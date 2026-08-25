@@ -22,7 +22,12 @@
       (c/insert! conn table-name
                  {:id      (first (:accounts test))
                   :balance (:total-amount test)}
-                 :keyspace keyspace)
+                 ; I'm not sure why they explicitly qualified the keyspace
+                 ; *only* for the first account, but my read is that the
+                 ; (use-keyspace!) call on client open should carry through
+                 ; here.
+                 ;:keyspace keyspace
+                 )
       (doseq [a (rest (:accounts test))]
         (c/insert! conn table-name
                    {:id a, :balance 0}))))
@@ -31,7 +36,8 @@
     (c/with-errors op #{:read}
       (case (:f op)
         :read
-        (->> (c/select conn table-name :keyspace keyspace)
+        (->> ;(c/select conn table-name :keyspace keyspace)
+             (c/select conn table-name)
              (map (juxt :id :balance))
              (into (sorted-map))
              (assoc op :type :ok, :value))
@@ -46,11 +52,11 @@
             conn
             (str "BEGIN TRANSACTION"
 
-                 " UPDATE " keyspace "." table-name
+                 " UPDATE " table-name
                  " SET balance = balance - " amount " WHERE id = " from
                  " IF EXISTS ELSE ERROR;"
 
-                 " UPDATE " keyspace "." table-name
+                 " UPDATE " table-name
                  " SET balance = balance + " amount " WHERE id = " to
                  " IF EXISTS ELSE ERROR;"
 
@@ -62,7 +68,7 @@
           (c/execute!
             conn
             (str "BEGIN TRANSACTION "
-                 "INSERT INTO " keyspace "." table-name
+                 "INSERT INTO " table-name
                  ; Weirdly,
                  ; https://docs.yugabyte.com/stable/api/ycql/dml_transaction/
                  ; says (twice!) that transactions may not have any IF
@@ -70,7 +76,7 @@
                  ; does this not throw?
                  " (id, balance) VALUES (" to "," amount ") IF NOT EXISTS ELSE ERROR;"
 
-                 "UPDATE " keyspace "." table-name
+                 "UPDATE " table-name
                  " SET balance = balance - " amount " WHERE id = " from ";"
                  "END TRANSACTION;"))
           (assoc op :type :ok)))))
