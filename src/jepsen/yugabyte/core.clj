@@ -117,25 +117,56 @@
      :types           types/workload           ysql.types/->Client
      :wr              wr/workload              ysql.wr/->Client]))
 
-(def workloads
+(def all-workloads
   "All workloads: a map of keywords to workload-constructing functions."
   (merge workloads-ycql
          workloads-ysql
          jsql/workloads))
 
-(def workload-options
-  "For each workload, a map of workload options to all the values that option
-  supports. Used for test-all."
-  (merge (map-vals (constantly {}) workloads-ycql)
-         (map-vals (constantly {}) workloads-ysql)
-         (map-vals (constantly {}) jsql/workloads)))
+(defn combos
+  "Takes a map of options to collections of values for that option. Computes a
+  collection of maps with the combinatorial expansion of every possible option
+  value."
+  ([opts]
+   (combos {} opts))
+  ([m opts]
+   (if (seq opts)
+     (let [[k vs] (first opts)]
+       (mapcat (fn [v]
+                 (combos (assoc m k v) (next opts)))
+               vs))
+     (list m))))
 
-(def workload-options-expected-to-pass
-  "Only workloads and options that we think should pass. Also used for
-  test-all."
-  (-> workload-options
-      (dissoc :ycql/bank-multitable
-              :ysql/append-table)))
+(def suggested-opts
+  "A map of workload names to a collection of suggested options for that
+  workload."
+  (let [ru+ {:isolation [:read-uncommitted
+                         :read-committed
+                         :repeatable-read
+                         :serializable]}
+        rc+ {:isolation [:read-committed :repeatable-read :serializable]}
+        si+ {:isolation [:repeatable-read :serializable]}
+        s   {:isolation [:serializable]}]
+    {:ysql/append (combos ru+)
+     :ysql/append-table (combos ru+)
+     :ysql/bank (combos si+)
+     :ysql/bank-improved (combos si+)
+     :ysql/bank-multitable (combos si+)
+     :ysql/counter (combos ru+)
+     :ysql/default-value (combos ru+)
+     :ysql/g2 (combos s)
+     :ysql/long-fork (combos si+)
+     :ysql/monotonic (combos ru+)
+     :ysql/multi-key-acid (combos rc+)
+     :ysql/set (combos rc+)
+     :ysql/set-indexed (combos rc+)
+     :ysql/single-key-acid (combos rc+)
+     :ysql/types (combos s)
+     :ysql/wr (combos ru+)
+     :jsql/wr (combos ru+)
+     :jsql/append (combos ru+)
+     :jsql/internal (combos si+)
+     :jsql/internal-sim (combos si+)}))
 
 (def nemesis-specs
   "These are the types of failures that the nemesis can perform."
@@ -194,28 +225,6 @@
                          ;"com.datastax.driver.core.CodecRegistry"  :info
                          }}})
 
-(defn all-combos
-  "Takes a map of options to collections of values for that option. Computes a
-  collection of maps with the combinatorial expansion of every possible option
-  value."
-  ([opts]
-   (all-combos {} opts))
-  ([m opts]
-   (if (seq opts)
-     (let [[k vs] (first opts)]
-       (mapcat (fn [v]
-                 (all-combos (assoc m k v) (next opts)))
-               vs))
-     (list m))))
-
-(defn all-workload-options
-  "Expands workload-options into all possible CLI opts for each combination of
-  workload options."
-  [workload-options]
-  (mapcat (fn [[workload opts]]
-            (all-combos {:workload workload} opts))
-          workload-options))
-
 (defn test-1
   "Initial test construction from a map of CLI options. Establishes the test
   name, OS, DB."
@@ -269,7 +278,7 @@
   "Second phase of test construction. Builds the workload and nemesis, and
   finalizes the test."
   [opts]
-  (let [workload ((get workloads (:workload opts)) opts)
+  (let [workload ((get all-workloads (:workload opts)) opts)
         nemesis (nemesis/nemesis opts)
         gen (->> (:generator workload)
                  (gen/nemesis (:generator nemesis))

@@ -12,14 +12,14 @@
             [jepsen.yugabyte.core :as core]))
 
 (defn parse-nemesis-spec
-  "Parses a comma-separated string of nemesis types, and turns it into an
-  option map like {:kill-alpha? true ...}"
+  "Parses a comma-separated string of nemesis faults, and turns it into a set
+  of keywords."
   [s]
   (if (= s "none")
-    {}
+    #{}
     (->> (str/split s #",")
-         (map (fn [o] [(keyword o) true]))
-         (into {}))))
+         (map keyword)
+         set)))
 
 (defn one-of
   "Like jepsen.cli/one-of but doesn't 'eat' namespaces"
@@ -30,12 +30,6 @@
         coll-keys      (if (map? coll) (keys coll) coll)
         coll-key-names (sort (map stringify coll-keys))]
     (str "Must be one of " (str/join ", " coll-key-names))))
-
-
-(defn log-test
-  [t attempt]
-  (info "Testing" (:name t) "attempt #" attempt)
-  t)
 
 ;
 ; Options
@@ -87,33 +81,19 @@
       :id :linearizable-keys?
       :default true]
 
-     [nil "--nemesis SPEC" "A comma-separated list of nemesis types"
-      :default {:interval 10}
+     [nil "--nemesis SPEC" "A comma-separated list of nemesis fault types"
       :parse-fn parse-nemesis-spec
-      :assoc-fn (fn [m k v] (update m :nemesis merge v))
       :validate [(fn [parsed]
-                   (and (map? parsed)
+                   (and (set? parsed)
                         (every? core/nemesis-specs (keys parsed))))
-                 (str "Should be a comma-separated list of failure types. A failure "
+                 (str "Should be a comma-separated list of faults. A failure "
                       (.toLowerCase (cli/one-of core/nemesis-specs))
                       ". Or, you can use 'none' to indicate no failures.")]]
 
      [nil "--nemesis-interval SECS"
       "Roughly how long to wait between nemesis operations. Default: 10s."
       :parse-fn parse-long
-      :assoc-fn (fn [m k v] (update m :nemesis assoc :interval v))
       :validate [(complement neg?) "should be a non-negative number"]]
-
-     [nil "--nemesis-no-recovery" "Disable guaranteed time period for cluster recovery."
-      ; for some reason :default true will not trigger fn below
-      ; original logic was reverted because of this issue
-      :default false
-      :assoc-fn (fn [m k v] (update m :nemesis assoc :no-recovery v))]
-
-     [nil "--nemesis-schedule SCHEDULE" "Whether to have randomized delays between nemesis actions, or fixed ones."
-      :parse-fn keyword
-      :assoc-fn (fn [m k v] (update m :nemesis assoc :schedule v))
-      :validate [#{:fixed :random} "Must be either 'fixed' or 'random'"]]
 
      ["-r" "--replication-factor INT" "Number of nodes in each Raft cluster."
       :default 3
@@ -129,17 +109,13 @@
      [nil "--table-count INT" "Number of tables to spread rows across."
       :default 5]
 
-     [nil "--table-locks" "If set, enables table-level locks; an experimental feature. See https://docs.yugabyte.com/stable/explore/transactions/explicit-locking/#table-level-locks for details."]
+     [nil "--table-locks" "If set, enables table-level locks: an experimental feature. See https://docs.yugabyte.com/stable/explore/transactions/explicit-locking/#table-level-locks for details."]
 
      [nil "--url URL" "URL to Yugabyte tarball to install, has precedence over --version"
       :default nil]
 
      [nil "--trace-cql" "If provided, logs CQL queries"
       :default false]
-
-     [nil "--random-seed SEED" "Random seed for deterministic test execution. If not provided, a random seed is generated."
-      :default nil
-      :parse-fn parse-long]
 
      [nil "--locking MODE" "Locking mode for append workloads: mixed (default), optimistic, or pessimistic"
       :default :mixed
@@ -165,117 +141,46 @@
    ["-w" "--workload NAME"
     "Test workload to run. If omitted, runs all workloads"
     :parse-fn keyword
-    :validate [core/workloads (one-of core/workloads)]]])
+    :validate [core/all-workloads (one-of core/all-workloads)]]])
 
 (def single-test-opts
   "Command line options for single tests"
   [["-w" "--workload NAME" "Test workload to run"
     :default  :jsql/append
     :parse-fn keyword
-    :missing (str "--workload " (one-of core/workloads))
-    :validate [core/workloads (one-of core/workloads)]]])
+    :missing (str "--workload " (one-of core/all-workloads))
+    :validate [core/all-workloads (one-of core/all-workloads)]]])
 
-(defn run-with-seed!
-  "Constructs and runs a Jepsen test. Takes a zero-arg function that builds the
-  test map. Wraps both construction and execution with jepsen.random/with-seed
-  for deterministic randomness. When seed is nil, defaults to
-  System/currentTimeMillis. Stores the seed in the test map as :random-seed
-  so it persists in results.edn."
-  [test-fn seed]
-  (let [seed (or seed (System/currentTimeMillis))]
-    (info "Random seed:" seed)
-    (random/with-seed seed
-      (jepsen/run! (assoc (test-fn) :random-seed seed)))))
+;; Subcommands
 
-;
-; Subcommands
-;
-
-(defn test-all-cmd
-  "A command that runs a whole suite of tests in one go."
-  []
-  {"test-all"
-   {:opt-spec (cli/merge-opt-specs cli/test-opt-spec
-                                   (concat cli-opts test-all-opts))
-    :opt-fn   cli/test-opt-fn
-    :usage    "Runs all tests"
-    :run      (fn [{:keys [options]}]
-                (info "CLI options:\n" (with-out-str (pprint options)))
-                (let [w             (:workload options)
-                      workload-opts (if (:only-workloads-expected-to-pass options)
-                                      core/workload-options-expected-to-pass
-                                      core/workload-options)
-                      workloads     (cond->> (core/all-workload-options
-                                               workload-opts)
-                                             w (filter (comp #{w} :workload)))
-                      tests         (for [nemesis  core/all-nemeses
-                                          workload workloads
-                                          i        (range (:test-count options))]
-                                      (-> options
-                                          (merge workload)
-                                          (update :nemesis merge nemesis)))
-                      results       (->> tests
-                                         (map-indexed
-                                           (fn [i test-opts]
-                                             (try
-                                               (info "\n\n\nTest "
-                                                     (inc i) "/" (count tests))
-                                               (let [test' (run-with-seed! #(core/yb-test test-opts)
-                                                                           (:random-seed options))]
-                                                 [(.getPath (store/path test'))
-                                                  (:valid? (:results test'))])
-                                               (catch Exception e
-                                                 (warn e "Test crashed")
-                                                 [(:name test-opts) :crashed]))))
-                                         (group-by second))]
-
-                  (println "\n")
-
-                  (when (seq (results true))
-                    (println "\n# Successful tests\n")
-                    (dorun (map (comp println first) (results true))))
-
-                  (when (seq (results :unknown))
-                    (println "\n# Indeterminate tests\n")
-                    (dorun (map (comp println first) (results :unknown))))
-
-                  (when (seq (results :crashed))
-                    (println "\n# Crashed tests\n")
-                    (dorun (map (comp println first) (results :crashed))))
-
-                  (when (seq (results false))
-                    (println "\n# Failed tests\n")
-                    (dorun (map (comp println first) (results false))))
-
-                  (println)
-                  (println (count (results true)) "successes")
-                  (println (count (results :unknown)) "unknown")
-                  (println (count (results :crashed)) "crashed")
-                  (println (count (results false)) "failures")))}})
-
-(defn single-test-cmd
-  "A command that runs a single test, wrapping execution with a random seed."
-  []
-  (let [opt-spec (cli/merge-opt-specs cli/test-opt-spec
-                                      (concat cli-opts single-test-opts))]
-    {"test" {:opt-spec opt-spec
-             :opt-fn   cli/test-opt-fn
-             :usage    "Runs a single test"
-             :run      (fn [{:keys [options]}]
-                         (info "Test options:\n"
-                               (with-out-str (pprint options)))
-                         (doseq [i (range (:test-count options))]
-                           (let [test (run-with-seed! #(core/yb-test options)
-                                                      (:random-seed options))]
-                             (case (:valid? (:results test))
-                               false    (System/exit 1)
-                               :unknown (System/exit 2)
-                               nil))))}}))
+(defn all-tests
+  "Takes CLI options and constructs a lazy sequence of test maps."
+  [opts]
+  (let [workloads     (if-let [w (:workload opts)]
+                        [w]
+                        (keys core/all-workloads))
+        nemeses       (if-let [n (:nemesis opts)]
+                        [n]
+                        core/all-nemeses)
+        counts        (range (:test-count opts))]
+    (for [i               counts
+          nemesis         nemeses
+          workload        workloads
+          suggested-opts  (get core/suggested-opts workload [{}])]
+      (-> opts
+          (merge {:workload workload, :nemesis nemesis})
+          (merge suggested-opts)
+          (core/yb-test)))))
 
 (defn -main
   "Handles CLI arguments"
   [& args]
-  (cli/run! (merge (cli/serve-cmd)
-                   (test-all-cmd)
-                   (single-test-cmd))
+  (cli/run! (merge
+              (cli/serve-cmd)
+              (cli/test-all-cmd
+                {:opt-spec (cli/merge-opt-specs cli-opts test-all-opts)
+                 :tests-fn all-tests})
+              (cli/single-test-cmd
+                {:opt-spec (cli/merge-opt-specs cli-opts single-test-opts)
+                 :test-fn core/yb-test}))
             args))
