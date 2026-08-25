@@ -57,6 +57,7 @@
       (c/with-txn test c
         (let [{:keys [from to amount]} (:value op)
               b-from (get-balance op c from)
+              _      (Thread/sleep (rand/zipf 10))
               b-to   (get-balance op c to)]
           (cond ; One account doesn't exist
                 (or (nil? b-from) (nil? b-to))
@@ -76,6 +77,7 @@
                 (let [b-from' (- b-from amount)
                       b-to'   (+ b-to amount)]
                   (c/update! op c table-name {:balance b-from'} ["id = ?" from])
+                  (Thread/sleep (rand/zipf 10))
                   (c/update! op c table-name {:balance b-to'} ["id = ?" to])
                   (assoc op :type :ok)))))
 
@@ -83,6 +85,7 @@
       (c/with-txn test c
         (let [{:keys [from to]} (:value op)
               b-from (get-balance op c from)
+              _      (Thread/sleep (rand/zipf 10))
               b-to   (get-balance op c to)]
           (cond
             (or (nil? b-from) (nil? b-to))
@@ -102,6 +105,7 @@
       (c/with-txn test c
         (let [{:keys [from to amount]} (:value op)
               b-from (get-balance op c from)
+              _      (Thread/sleep (rand/zipf 10))
               b-to   (get-balance op c to)]
           (cond
             (or (nil? b-from) (not (nil? b-to)))
