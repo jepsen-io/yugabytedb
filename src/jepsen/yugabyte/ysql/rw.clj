@@ -1,5 +1,5 @@
-(ns jepsen.yugabyte.ysql.wr
-  "YSQL client for the write-read register workload (yugabyte.wr).
+(ns jepsen.yugabyte.ysql.rw
+  "YSQL client for the read-write register workload.
 
   Registers are rows in `wr (k int primary key, k2 int, v int)` with a secondary
   index on k2 that INCLUDEs v. A transaction is a sequence of micro-ops [f k v]:

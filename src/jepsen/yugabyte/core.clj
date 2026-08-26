@@ -26,7 +26,7 @@
                              [set             :as set]
                              [single-key-acid :as single-key-acid]
                              [types           :as types]
-                             [wr              :as wr]]
+                             [rw              :as rw]]
             [jepsen.yugabyte.ycql [bank            :as ycql.bank]
                                   [counter         :as ycql.counter]
                                   [long-fork       :as ycql.long-fork]
@@ -49,7 +49,7 @@
                                   [set             :as ysql.set]
                                   [single-key-acid :as ysql.single-key-acid]
                                   [types           :as ysql.types]
-                                  [wr              :as ysql.wr]
+                                  [rw              :as ysql.rw]
              ])
   (:import (jepsen.client Client)))
 
@@ -116,7 +116,7 @@
      :set-index       set/workload             (partial ysql.set/->Client true)
      :single-key-acid single-key-acid/workload ysql.single-key-acid/->Client
      :types           types/workload           ysql.types/->Client
-     :wr              wr/workload              ysql.wr/->Client]))
+     :rw              rw/workload              ysql.rw/->Client]))
 
 (def all-workloads
   "All workloads: a map of keywords to workload-constructing functions."
@@ -151,7 +151,7 @@
     {:jsql/append          (combos ru+)
      :jsql/internal        (combos si+)
      :jsql/internal-sim    (combos si+)
-     :jsql/wr              (combos ru+)
+     :jsql/rw              (combos ru+)
      ; These have quadratic costs, so we can't go too fast
      :ycql/set-index       {:rate [100]}
      :ycql/set             {:rate [100]}
@@ -171,7 +171,7 @@
      :ysql/set-index       (combos (merge rc+ {:rate [100]}))
      :ysql/single-key-acid (combos rc+)
      :ysql/types           (combos s)
-     :ysql/wr              (combos ru+)}))
+     :ysql/rw              (combos ru+)}))
 
 (def nemesis-specs
   "These are the types of failures that the nemesis can perform."

@@ -1,5 +1,5 @@
-(ns jepsen.yugabyte.wr
-  "Write-read register workload built on Elle's rw-register cycle checker.
+(ns jepsen.yugabyte.rw
+  "Read-write register workload built on Elle's rw-register cycle checker.
 
   Complements the list-append workload: instead of appending to lists, each
   transaction is a mix of single-key reads and writes of unique values, and we
