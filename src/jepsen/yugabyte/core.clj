@@ -112,8 +112,8 @@
      :long-fork       long-fork/workload       ysql.long-fork/->Client
      :monotonic       monotonic/workload       ysql.monotonic/->Client
      :multi-key-acid  multi-key-acid/workload  ysql.multi-key-acid/->Client
-     :set             set/workload             ysql.set/->Client
-     :set-index       set/workload             ysql.set/->IndexClient
+     :set             set/workload             (partial ysql.set/->Client false)
+     :set-index       set/workload             (partial ysql.set/->Client true)
      :single-key-acid single-key-acid/workload ysql.single-key-acid/->Client
      :types           types/workload           ysql.types/->Client
      :wr              wr/workload              ysql.wr/->Client]))
@@ -168,7 +168,7 @@
      :ysql/multi-key-acid  (combos rc+)
      ; These have quadratic costs, so we can't go too fast
      :ysql/set             (combos (merge rc+ {:rate [100]}))
-     :ysql/set-indexed     (combos (merge rc+ {:rate [100]}))
+     :ysql/set-index       (combos (merge rc+ {:rate [100]}))
      :ysql/single-key-acid (combos rc+)
      :ysql/types           (combos s)
      :ysql/wr              (combos ru+)}))
