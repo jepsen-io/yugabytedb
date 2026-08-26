@@ -308,30 +308,16 @@
     (stop-master! db))
   :stopped)
 
-(defn signal!
-  "Sends a signal to a named process by signal number or name."
-  [process-name signal]
-  (meh (c/su (c/exec :pkill :--signal signal process-name)))
-  :signaled)
-
-(defn kill!
-  "Kill a process forcibly."
-  [process]
-  (signal! process 9)
-  (c/exec (c/lit (str "! ps -ce | grep " process)))
-  (info process "killed")
-  :killed)
-
 (defn kill-tserver!
   "Kills the tserver"
   [db]
-  (kill! "yb-tserver")
+  (cu/grepkill! "yb-tserver")
   (stop-tserver! db))
 
 (defn kill-master!
   "Kills the master"
   [db]
-  (kill! "yb-master")
+  (cu/grepkill! "yb-master")
   (stop-master! db))
 
 (defn version
@@ -851,12 +837,12 @@
 
   db/Pause
   (pause! [this test node]
-    (signal! "yb-tserver" :STOP)
-    (signal! "yb-master" :STOP))
+    (cu/grepkill! :STOP "yb-tserver")
+    (cu/grepkill! :STOP "yb-master"))
 
   (resume! [this test node]
-    (signal! "yb-tserver" :CONT)
-    (signal! "yb-master" :CONT))
+    (cu/grepkill! :CONT "yb-tserver")
+    (cu/grepkill! :CONT "yb-master"))
 
   db/Primary
   (setup-primary! [this test node]

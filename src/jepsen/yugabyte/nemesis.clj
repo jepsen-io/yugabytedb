@@ -2,6 +2,7 @@
   (:require [clojure [pprint :refer [pprint]]]
             [clojure.tools.logging :refer :all]
             [jepsen.control :as c]
+            [jepsen.control.util :as cu]
             [jepsen.generator :as gen]
             [jepsen.nemesis :as nemesis]
             [jepsen.util :as util :refer [meh timeout]]
@@ -22,8 +23,8 @@
                   (case (:f op)
                     :start  (db/start-master! db test c/*host*)
                     :kill   (db/kill-master!  db)
-                    :pause  (db/signal! "yb-master" :STOP)
-                    :resume (db/signal! "yb-master" :CONT)))]
+                    :pause  (cu/grepkill! :STOP "yb-master")
+                    :resume (cu/grepkill! :CONT "yb-master")))]
       (assoc op :value res)))
 
   (teardown! [this test])
@@ -43,8 +44,8 @@
                 (case (:f op)
                   :start (db/start-tserver! db test c/*host*)
                   :kill  (db/kill-tserver!  db)
-                  :pause (db/signal! "yb-tserver" :STOP)
-                  :resume (db/signal! "yb-tserver" :CONT)))]
+                  :pause (cu/grepkill! :STOP "yb-tserver")
+                  :resume (cu/grepkill! :CONT "yb-tserver")))]
       (assoc op :value res)))
 
   (teardown! [this test])
