@@ -148,13 +148,13 @@
         rc+ {:isolation [:read-committed :repeatable-read :serializable]}
         si+ {:isolation [:repeatable-read :serializable]}
         s   {:isolation [:serializable]}]
+    ; I'm writing (combos ...) explicitly here because it's conceivable we're
+    ; going to add some options that you *don't* want to take the cartesian
+    ; product of, for specific workloads
     {:jsql/append          (combos ru+)
      :jsql/internal        (combos si+)
      :jsql/internal-sim    (combos si+)
      :jsql/rw              (combos ru+)
-     ; These have quadratic costs, so we can't go too fast
-     :ycql/set-index       {:rate [100]}
-     :ycql/set             {:rate [100]}
      :ysql/append          (combos ru+)
      :ysql/append-table    (combos ru+)
      :ysql/bank            (combos si+)
@@ -166,9 +166,8 @@
      :ysql/long-fork       (combos si+)
      :ysql/monotonic       (combos ru+)
      :ysql/multi-key-acid  (combos rc+)
-     ; These have quadratic costs, so we can't go too fast
-     :ysql/set             (combos (merge rc+ {:rate [100]}))
-     :ysql/set-index       (combos (merge rc+ {:rate [100]}))
+     :ysql/set             (combos rc+)
+     :ysql/set-index       (combos rc+)
      :ysql/single-key-acid (combos rc+)
      :ysql/types           (combos s)
      :ysql/rw              (combos ru+)}))
@@ -186,25 +185,23 @@
 
 (def all-nemeses
   "All nemesis specs to run as a part of a complete test suite."
-  (->> [[]                                                  ; No faults
-        [:kill-tserver]                                     ; Just tserver
-        [:kill-master]                                      ; Just master
-        [:pause-tserver]                                    ; Just pause tserver
-        [:pause-master]                                     ; Just pause master
-        [:clock-skew]                                       ; Just clocks
-        [:partition-one                                     ; Just partitions
-         :partition-half
-         :partition-ring]
-        [:kill-tserver
-         :kill-master
-         :pause-tserver
-         :pause-master
-         :clock-skew
-         :partition-one
-         :partition-half
-         :partition-ring]]
-       ; Turn these into maps with each key being true
-       (map (fn [faults] (zipmap faults (repeat true))))))
+  [#{}               ; No faults
+   #{:kill-tserver}  ; Just tserver
+   #{:kill-master}   ; Just master
+   #{:pause-tserver} ; Just pause tserver
+   #{:pause-master}  ; Just pause master
+   #{:clock-skew}    ; Just clocks
+   #{:partition-one  ; Just partitions
+     :partition-half
+     :partition-ring}
+   #{:kill-tserver
+     :kill-master
+     :pause-tserver
+     :pause-master
+     :clock-skew
+     :partition-one
+     :partition-half
+     :partition-ring}])
 
 (defn yugabyte-ssh-defaults
   "A partial test map with SSH options for a test running in Yugabyte's
