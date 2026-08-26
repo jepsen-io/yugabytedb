@@ -840,6 +840,24 @@
       (stop! db test node)
       (wipe! db)))
 
+  db/Process
+  (kill! [this test node]
+    (kill-tserver! this)
+    (kill-master! this))
+
+  (start! [this test node]
+    (start-tserver! this test node)
+    (start-master! this test node))
+
+  db/Pause
+  (pause! [this test node]
+    (signal! "yb-tserver" :STOP)
+    (signal! "yb-master" :STOP))
+
+  (resume! [this test node]
+    (signal! "yb-tserver" :CONT)
+    (signal! "yb-master" :CONT))
+
   db/Primary
   (setup-primary! [this test node]
     "Executed once on a first node in list (i.e. n1 by default) after per-node setup is done"

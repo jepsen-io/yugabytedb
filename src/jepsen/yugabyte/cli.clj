@@ -71,7 +71,7 @@
       :default false]
 
      [nil "--final-recovery-time SECONDS" "How long to wait for the cluster to stabilize at the end of a test"
-      :default 30
+      :default 15
       :parse-fn parse-long
       :validate [(complement neg?) "Must be a non-negative number"]]
 
@@ -83,15 +83,14 @@
 
      [nil "--nemesis SPEC" "A comma-separated list of nemesis fault types"
       :parse-fn parse-nemesis-spec
-      :validate [(fn [parsed]
-                   (and (set? parsed)
-                        (every? core/nemesis-specs (keys parsed))))
+      :validate [(partial every? core/nemesis-specs)
                  (str "Should be a comma-separated list of faults. A failure "
                       (.toLowerCase (cli/one-of core/nemesis-specs))
                       ". Or, you can use 'none' to indicate no failures.")]]
 
      [nil "--nemesis-interval SECS"
       "Roughly how long to wait between nemesis operations. Default: 10s."
+      :default 10
       :parse-fn parse-long
       :validate [(complement neg?) "should be a non-negative number"]]
 

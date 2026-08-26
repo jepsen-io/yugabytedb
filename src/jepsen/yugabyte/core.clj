@@ -1,7 +1,8 @@
 (ns jepsen.yugabyte.core
   "Integrates workloads, nemeses, and automation to construct test maps."
   (:require [clojure.tools.logging :refer :all]
-            [clojure.string :as str]
+            [clojure [pprint :refer [pprint]]
+                     [string :as str]]
             [jepsen [checker   :as checker]
                     [generator :as gen]
                     [random    :as random]
@@ -171,19 +172,13 @@
 (def nemesis-specs
   "These are the types of failures that the nemesis can perform."
   #{:partition
-    :partition-half
-    :partition-ring
-    :partition-one
     :kill
     :kill-master
     :kill-tserver
+    :pause
     :pause-master
     :pause-tserver
-    :pause
-    :stop
-    :stop-master
-    :stop-tserver
-    :clock-skew})
+    :clock})
 
 (def all-nemeses
   "All nemesis specs to run as a part of a complete test suite."
@@ -257,18 +252,20 @@
             :serializable     :strong-serializable))
 
       :name (str (-> (or (:url opts) (:version opts))
-                           (str/split #"/")
-                           (last))
+                     (str/split #"/")
+                     (last))
                  " " (name api)
                  " " (name (:workload opts))
-                 " " (:isolation opts)
+                 ; Isolation doesn't apply to ycql
+                 (when (not= :ycql api)
+                   (str " " (name (:isolation opts))))
                  (when (:geo-partition opts) " geo")
-                 (when-not (= [:interval] (keys (:nemesis opts)))
-                   (str " nemesis " (->> (dissoc (:nemesis opts) :interval)
-                                         keys
-                                         (map name)
-                                         sort
-                                         (str/join ",")))))
+                 (when (seq (:nemesis opts))
+                   (str " nemesis "
+                        (->> (:nemesis opts)
+                             sort
+                             (map name)
+                             (str/join ",")))))
       :os (case (:os opts)
             :centos centos/os
             :debian debian/os)
@@ -279,7 +276,13 @@
   finalizes the test."
   [opts]
   (let [workload ((get all-workloads (:workload opts)) opts)
-        nemesis (nemesis/nemesis opts)
+        nemesis (nemesis/package
+                  {:db       (:db opts)
+                   :nodes    (:nodes opts)
+                   :faults   (:nemesis opts)
+                   :pause    {:targets [:one :minority :majority]}
+                   :kill     {:targets [:one :minority :majority :all]}
+                   :interval (:nemesis-interval opts)})
         gen (->> (:generator workload)
                  (gen/nemesis (:generator nemesis))
                  (gen/time-limit (:time-limit opts)))
