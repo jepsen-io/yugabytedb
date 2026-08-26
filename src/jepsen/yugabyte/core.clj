@@ -148,26 +148,30 @@
         rc+ {:isolation [:read-committed :repeatable-read :serializable]}
         si+ {:isolation [:repeatable-read :serializable]}
         s   {:isolation [:serializable]}]
-    {:ysql/append (combos ru+)
-     :ysql/append-table (combos ru+)
-     :ysql/bank (combos si+)
-     :ysql/bank-improved (combos si+)
+    {:jsql/append          (combos ru+)
+     :jsql/internal        (combos si+)
+     :jsql/internal-sim    (combos si+)
+     :jsql/wr              (combos ru+)
+     ; These have quadratic costs, so we can't go too fast
+     :ycql/set-index       {:rate [100]}
+     :ycql/set             {:rate [100]}
+     :ysql/append          (combos ru+)
+     :ysql/append-table    (combos ru+)
+     :ysql/bank            (combos si+)
+     :ysql/bank-improved   (combos si+)
      :ysql/bank-multitable (combos si+)
-     :ysql/counter (combos ru+)
-     :ysql/default-value (combos ru+)
-     :ysql/g2 (combos s)
-     :ysql/long-fork (combos si+)
-     :ysql/monotonic (combos ru+)
-     :ysql/multi-key-acid (combos rc+)
-     :ysql/set (combos rc+)
-     :ysql/set-indexed (combos rc+)
+     :ysql/counter         (combos ru+)
+     :ysql/default-value   (combos ru+)
+     :ysql/g2              (combos s)
+     :ysql/long-fork       (combos si+)
+     :ysql/monotonic       (combos ru+)
+     :ysql/multi-key-acid  (combos rc+)
+     ; These have quadratic costs, so we can't go too fast
+     :ysql/set             (combos (merge rc+ {:rate [100]}))
+     :ysql/set-indexed     (combos (merge rc+ {:rate [100]}))
      :ysql/single-key-acid (combos rc+)
-     :ysql/types (combos s)
-     :ysql/wr (combos ru+)
-     :jsql/wr (combos ru+)
-     :jsql/append (combos ru+)
-     :jsql/internal (combos si+)
-     :jsql/internal-sim (combos si+)}))
+     :ysql/types           (combos s)
+     :ysql/wr              (combos ru+)}))
 
 (def nemesis-specs
   "These are the types of failures that the nemesis can perform."
@@ -283,16 +287,20 @@
                    :pause    {:targets [:one :minority :majority]}
                    :kill     {:targets [:one :minority :majority :all]}
                    :interval (:nemesis-interval opts)})
-        gen (->> (:generator workload)
+        gen (:generator workload)
+        gen (if-let [r (:rate opts)]
+              (gen/stagger (/ r) gen)
+              gen)
+        gen (->> gen
                  (gen/nemesis (:generator nemesis))
                  (gen/time-limit (:time-limit opts)))
-        gen (if (:final-generator workload)
+        gen (if-let [final (:final-generator workload)]
               (gen/phases gen
                           (gen/log "Healing cluster")
                           (gen/nemesis (:final-generator nemesis))
                           (gen/log "Waiting for recovery...")
                           (gen/sleep (:final-recovery-time opts))
-                          (gen/clients (:final-generator workload)))
+                          (gen/clients final))
               gen)
         gen (if-let [wrap (:wrap-generator workload)]
               (wrap gen)

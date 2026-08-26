@@ -81,6 +81,15 @@
       :id :linearizable-keys?
       :default true]
 
+     [nil "--locking MODE" "Locking mode for append workloads: mixed (default), optimistic, or pessimistic"
+      :default :mixed
+      :parse-fn keyword
+      :validate [#{:mixed :optimistic :pessimistic} "Must be one of: mixed, optimistic, pessimistic"]]
+
+     [nil "--master-flags FLAG" "Extra gflag for master (repeatable): flag_name or flag_name=value. pg_conf flags are merged."
+      :default []
+      :assoc-fn (fn [m _ v] (update m :master-flags conj v))]
+
      [nil "--nemesis SPEC" "A comma-separated list of nemesis fault types"
       :parse-fn parse-nemesis-spec
       :validate [(partial every? core/nemesis-specs)
@@ -94,43 +103,41 @@
       :parse-fn parse-long
       :validate [(complement neg?) "should be a non-negative number"]]
 
+     [nil "--rate HZ" "Maximum request rate, in reqs/sec."
+      :default nil
+      :parse-fn read-string
+      :validate [#(and (number? %) (pos? %)) "must be positive"]]
+
      ["-r" "--replication-factor INT" "Number of nodes in each Raft cluster."
       :default 3
       :parse-fn #(Long/parseLong %)
       :validate [pos? "Must be a positive integer"]]
 
-     [nil "--yugabyte-ssh" "Override SSH options with hardcoded defaults for Yugabyte's internal testing environment"
-      :default false]
-
-     [nil "--version VERSION" "What version of Yugabyte to install"
-      :default "2026.1.0.0-b118"]
+     [nil "--stress-tuning" "Enable stress-test flags that use tiny thresholds for internal subsystems (batching, compaction, WAL, cache, splitting, etc.) to trigger edge cases more frequently"
+      :default true]
 
      [nil "--table-count INT" "Number of tables to spread rows across."
       :default 5]
 
      [nil "--table-locks" "If set, enables table-level locks: an experimental feature. See https://docs.yugabyte.com/stable/explore/transactions/explicit-locking/#table-level-locks for details."]
 
-     [nil "--url URL" "URL to Yugabyte tarball to install, has precedence over --version"
-      :default nil]
-
      [nil "--trace-cql" "If provided, logs CQL queries"
       :default false]
 
-     [nil "--locking MODE" "Locking mode for append workloads: mixed (default), optimistic, or pessimistic"
-      :default :mixed
-      :parse-fn keyword
-      :validate [#{:mixed :optimistic :pessimistic} "Must be one of: mixed, optimistic, pessimistic"]]
-
-     [nil "--stress-tuning" "Enable stress-test flags that use tiny thresholds for internal subsystems (batching, compaction, WAL, cache, splitting, etc.) to trigger edge cases more frequently"
-      :default true]
-
-     [nil "--master-flags FLAG" "Extra gflag for master (repeatable): flag_name or flag_name=value. pg_conf flags are merged."
-      :default []
-      :assoc-fn (fn [m _ v] (update m :master-flags conj v))]
-
      [nil "--tserver-flags FLAG" "Extra gflag for tserver (repeatable): flag_name or flag_name=value. pg_conf flags are merged."
       :default []
-      :assoc-fn (fn [m _ v] (update m :tserver-flags conj v))]]))
+      :assoc-fn (fn [m _ v] (update m :tserver-flags conj v))]
+
+     [nil "--url URL" "URL to Yugabyte tarball to install, has precedence over --version"
+      :default nil]
+
+     [nil "--version VERSION" "What version of Yugabyte to install"
+      :default "2026.1.0.0-b118"]
+
+     [nil "--yugabyte-ssh" "Override SSH options with hardcoded defaults for Yugabyte's internal testing environment"
+      :default false]
+
+     ]))
 
 (def test-all-opts
   "CLI options for testing everything."
