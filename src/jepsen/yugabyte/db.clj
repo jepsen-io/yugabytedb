@@ -311,13 +311,13 @@
 (defn kill-tserver!
   "Kills the tserver"
   [db]
-  (cu/grepkill! "yb-tserver")
+  (cu/kill-bin! ce-tserver-bin)
   (stop-tserver! db))
 
 (defn kill-master!
   "Kills the master"
   [db]
-  (cu/grepkill! "yb-master")
+  (cu/kill-bin! ce-master-bin)
   (stop-master! db))
 
 (defn version
@@ -837,12 +837,12 @@
 
   db/Pause
   (pause! [this test node]
-    (cu/grepkill! :STOP "yb-tserver")
-    (cu/grepkill! :STOP "yb-master"))
+    (cu/kill-bin! :STOP ce-tserver-bin)
+    (cu/kill-bin! :STOP ce-master-bin))
 
   (resume! [this test node]
-    (cu/grepkill! :CONT "yb-tserver")
-    (cu/grepkill! :CONT "yb-master"))
+    (cu/kill-bin! :CONT ce-tserver-bin)
+    (cu/kill-bin! :CONT ce-master-bin))
 
   db/Primary
   (setup-primary! [this test node]
