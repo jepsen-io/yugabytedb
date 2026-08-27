@@ -37,7 +37,8 @@
 
 (defn mop!
   "Executes a micro-op [f k v] on a connection, returning the completed op."
-  [conn [f k v]]
+  [test conn [f k v]]
+  (Thread/sleep (random/zipf (:mop-delay test)))
   [f k (case f
          :r (read-register conn k)
          :w (write-register! conn k v))])
@@ -56,8 +57,8 @@
           use-txn? (< 1 (count txn))
           txn'     (if use-txn?
                      (c/with-txn test c
-                       (mapv (partial mop! c) txn))
-                     (mapv (partial mop! c) txn))]
+                       (mapv (partial mop! test c) txn))
+                     (mapv (partial mop! test c) txn))]
       (assoc op :type :ok, :value txn')))
 
   (teardown-cluster! [this test c]

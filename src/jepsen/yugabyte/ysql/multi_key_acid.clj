@@ -41,6 +41,7 @@
         :write
         (c/with-txn test c
           (doseq [[f k1 v] ops]
+            (Thread/sleep (random/zipf (:mop-delay test)))
             (assert (= :w f))
               (c/execute! op c
                   [(str "INSERT INTO " table-name " (k1, k2, val)"

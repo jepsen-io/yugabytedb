@@ -55,13 +55,15 @@
 (defn workload
   [opts]
   (let [n (count (:nodes opts))]
-    {:concurrency (* 8 n)
+    {:concurrency (* 4 n)
+     ; It's easy for this workload to blow out ram if we get big histories
+     :rate 1000
      :generator (independent/concurrent-generator
                   (* 2 n)
                   (range)
                   (fn [k]
                     (->> (gen/reserve n r w)
-                         (gen/process-limit 10)
+                         (gen/process-limit 8)
                          (gen/limit 8192))))
      :checker   (independent/checker
                   (checker/compose
