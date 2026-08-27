@@ -144,6 +144,10 @@
   [[nil "--only-workloads-expected-to-pass" "If present, skips tests which are not expected to pass"
     :default false]
 
+   [nil "--test-number I" "For test-all, runs only the `I`th test out of all the tests that would otherwise be run."
+    :parse-fn parse-long
+    :validate [(complement neg?) "Must be non-negative"]]
+
    ["-w" "--workload NAME"
     "Test workload to run. If omitted, runs all workloads"
     :parse-fn keyword
@@ -168,15 +172,21 @@
         nemeses       (if-let [n (:nemesis opts)]
                         [n]
                         core/all-nemeses)
-        counts        (range (:test-count opts))]
-    (for [i               counts
-          nemesis         nemeses
-          workload        workloads
-          suggested-opts  (get core/suggested-opts workload [{}])]
-      (-> opts
-          (merge {:workload workload, :nemesis nemesis})
-          (merge suggested-opts)
-          (core/yb-test)))))
+        counts        (range (:test-count opts))
+        tests (for [i               counts
+                    nemesis         nemeses
+                    workload        workloads
+                    suggested-opts  (get core/suggested-opts workload [{}])]
+                (-> opts
+                    (merge {:workload workload, :nemesis nemesis})
+                    (merge suggested-opts)
+                    (core/yb-test)))]
+    (if-let [i (:test-number opts)]
+      (try [(nth tests i)]
+           (catch IndexOutOfBoundsException e
+             (println "End of tests")
+             (System/exit 250)))
+      tests)))
 
 (defn -main
   "Handles CLI arguments"

@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+
+# There is some sort of horrible thread and/or memory leak in the test that I
+# have never seen before, cannot explain, and I sadly don't have time to
+# investigate. This script works just like `lein run test-all ...`, but spins
+# up a fresh JVM for each test.
+
+function interrupt()
+{
+  echo "test-all exiting!"
+  exit 1
+}
+
+trap interrupt SIGINT
+
+i=0
+exit=255
+while (( exit != 250 )); do
+  lein run test-all "$@" --test-number $i
+  exit=$?
+  ((i++))
+done
