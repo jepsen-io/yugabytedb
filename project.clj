@@ -15,6 +15,7 @@
                  [clj-wallhack "1.0.1"]]
   :main jepsen.yugabyte.cli
   :jvm-opts ["-Djava.awt.headless=true"
+             "-Djava.net.preferIPv4Stack=true"
              "-Xms4g"
              "-Xmx16g"
              "-XX:-OmitStackTraceInFastThrow"

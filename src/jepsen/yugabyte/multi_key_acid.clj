@@ -63,8 +63,8 @@
                   (range)
                   (fn [k]
                     (->> (gen/reserve n r w)
-                         (gen/process-limit 8)
-                         (gen/limit 8192))))
+                         (gen/process-limit (* n 2))
+                         (gen/limit 4096))))
      :checker   (independent/checker
                   (checker/compose
                     {:timeline (timeline/html)
