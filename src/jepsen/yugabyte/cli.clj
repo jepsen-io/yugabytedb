@@ -104,7 +104,7 @@
       :validate [(complement neg?) "should be a non-negative number"]]
 
      [nil "--rate HZ" "Maximum request rate, in reqs/sec."
-      :default nil
+      :default  1000
       :parse-fn read-string
       :validate [#(and (number? %) (pos? %)) "must be positive"]]
 
