@@ -191,17 +191,13 @@
    #{:pause-tserver} ; Just pause tserver
    #{:pause-master}  ; Just pause master
    #{:clock-skew}    ; Just clocks
-   #{:partition-one  ; Just partitions
-     :partition-half
-     :partition-ring}
+   #{:partition}     ; Just partitions
    #{:kill-tserver
      :kill-master
      :pause-tserver
      :pause-master
      :clock-skew
-     :partition-one
-     :partition-half
-     :partition-ring}])
+     :partition}])
 
 (defn yugabyte-ssh-defaults
   "A partial test map with SSH options for a test running in Yugabyte's
