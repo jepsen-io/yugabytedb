@@ -301,10 +301,8 @@
         ; Process wrapped exception, if any
         (error-fn e2)
 
-        ; Happens when with-conn macro detects a closed connectio
         (let [data (ex-data e)]
           (case (:type data)
-            :conn-not-ready (assoc data :definite? true)
             nil)))
 
       (condp re-find m
