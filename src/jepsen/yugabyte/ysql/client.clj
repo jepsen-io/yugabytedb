@@ -217,6 +217,10 @@
          :msg m
          :definite? true}
 
+        #"deadlock detected"
+        {:type :deadlock
+         :definite? true}
+
         ; This type of error can, on occasion, be indeterminate: the
         ; transaction may have actually committed.
         #"(?i)Operation expired"
