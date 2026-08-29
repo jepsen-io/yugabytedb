@@ -212,6 +212,10 @@
          :msg m
          :definite? true}
 
+        #"Could not serialize access due to concurrent update"
+        {:type :concurrent-update
+         :definite? true}
+
         #"(?i)Catalog Version Mismatch"
         {:type :catalog-version-mismatch
          :msg m
