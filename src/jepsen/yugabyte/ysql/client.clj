@@ -225,6 +225,10 @@
         {:type :deadlock
          :definite? true}
 
+        #"duplicate key value"
+        {:type :duplicate-key-value
+         :definite? true}
+
         ; This type of error can, on occasion, be indeterminate: the
         ; transaction may have actually committed.
         #"(?i)Operation expired"
