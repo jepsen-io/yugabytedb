@@ -862,6 +862,10 @@
             (ysqlsh test node :-c (str "GRANT CREATE ON TABLESPACE " tablespace-name "_1a TO jepsen;"))
             (ysqlsh test node :-c (str "GRANT CREATE ON TABLESPACE " tablespace-name "_2a TO jepsen;")))))))
 
+  (primaries [this test]
+    ; TODO: detect likely primaries from the API
+    [])
+
   db/LogFiles
   (log-files [_ _ _]
     (concat [ce-master-logfile
