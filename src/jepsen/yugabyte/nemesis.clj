@@ -42,7 +42,16 @@
           nodes (nc/db-nodes test db (:value op))
           res (c/with-nodes test nodes
                 (case (:f op)
-                  :start (db/start-tserver! db test c/*host*)
+                  ; Sort of a hack, but... YB masters seem to crash for
+                  ; mysterious reasons when we kill tservers. There's nothing
+                  ; in the logs and I'm running out of time here, so I'm just
+                  ; going to have them restart when the tservers do. This is
+                  ; going to make the nemesis plots look wrong, and probably
+                  ; confuse someone debugging this later, but I have *got* to
+                  ; keep the cluster running somehow or I'm never going to get
+                  ; results. :-/
+                  :start (do (db/start-master! db test c/*host*)
+                             (db/start-tserver! db test c/*host*))
                   :kill  (db/kill-tserver!  db)
                   :pause (cu/grepkill! :STOP "yb-tserver")
                   :resume (cu/grepkill! :CONT "yb-tserver")))]
