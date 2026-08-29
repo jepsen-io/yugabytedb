@@ -98,8 +98,8 @@
                       ". Or, you can use 'none' to indicate no failures.")]]
 
      [nil "--nemesis-interval SECS"
-      "Roughly how long to wait between nemesis operations. Default: 20s."
-      :default 20
+      "Roughly how long to wait between nemesis operations. Default: 10s."
+      :default 10
       :parse-fn parse-long
       :validate [(complement neg?) "should be a non-negative number"]]
 
