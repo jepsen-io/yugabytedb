@@ -54,11 +54,13 @@
 
                  " UPDATE " table-name
                  " SET balance = balance - " amount " WHERE id = " from
-                 " IF EXISTS ELSE ERROR;"
+                 ;" IF EXISTS ELSE ERROR;"
+                 ";"
 
                  " UPDATE " table-name
                  " SET balance = balance + " amount " WHERE id = " to
-                 " IF EXISTS ELSE ERROR;"
+                 ;" IF EXISTS ELSE ERROR;"
+                 ";"
 
                  " END TRANSACTION;"))
           (assoc op :type :ok))
@@ -73,7 +75,8 @@
                  ; https://docs.yugabyte.com/stable/api/ycql/dml_transaction/
                  ; says (twice!) that transactions may not have any IF
                  ; expressions in their INSERTs, UPDATEs, or DELETEs. So... why
-                 ; does this not throw?
+                 ; does this not throw? Yugabyte wrote this code, so they must
+                 ; know...
                  " (id, balance) VALUES (" to "," amount ") IF NOT EXISTS ELSE ERROR;"
 
                  "UPDATE " table-name
