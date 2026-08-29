@@ -289,7 +289,11 @@
               (gen/stagger (/ r) gen)
               gen)
         gen (->> gen
-                 (gen/nemesis (:generator nemesis))
+                 (gen/nemesis
+                   (gen/phases
+                     ; Give ourselves a little bit before killing processes
+                     (gen/sleep 5)
+                     (:generator nemesis)))
                  (gen/time-limit (:time-limit opts)))
         gen (if-let [final (:final-generator workload)]
               (gen/phases gen
