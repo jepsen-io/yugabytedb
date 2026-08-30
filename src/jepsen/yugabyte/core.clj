@@ -285,6 +285,7 @@
               (gen/stagger (/ r) gen)
               gen)
         gen (->> gen
+                 gen/relaxed-reconnect
                  (gen/nemesis
                    (gen/phases
                      ; Give ourselves a little bit before killing processes
