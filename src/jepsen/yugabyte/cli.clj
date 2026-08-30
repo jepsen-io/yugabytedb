@@ -70,8 +70,8 @@
      [nil "--extreme-skew" "Enable extreme clock skew flags: master and tserver process can have different skew on one node"
       :default false]
 
-     [nil "--final-recovery-time SECONDS" "How long to wait for the cluster to stabilize at the end of a test"
-      :default 15
+     [nil "--final-recovery-time SECONDS" "How long, at most, to wait for the cluster to stabilize at the end of a test"
+      :default  600
       :parse-fn parse-long
       :validate [(complement neg?) "Must be a non-negative number"]]
 

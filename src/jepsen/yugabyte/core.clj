@@ -23,6 +23,7 @@
                              [monotonic       :as monotonic]
                              [multi-key-acid  :as multi-key-acid]
                              [nemesis         :as nemesis]
+                             [recovery        :as recovery]
                              [set             :as set]
                              [single-key-acid :as single-key-acid]
                              [types           :as types]
@@ -296,8 +297,7 @@
               (gen/phases gen
                           (gen/log "Healing cluster")
                           (gen/nemesis (:final-generator nemesis))
-                          (gen/log "Waiting for recovery...")
-                          (gen/sleep (:final-recovery-time opts))
+                          (recovery/generator opts)
                           (gen/clients final))
               gen)
         gen (if-let [wrap (:wrap-generator workload)]
@@ -346,7 +346,8 @@
             :concurrency     (or (:concurrency opts)
                                  (:concurrency workload)
                                  (* 2 (count (:nodes opts))))
-            :nemesis         (:nemesis nemesis)
+            :nemesis         (recovery/nemesis
+                               (:nemesis nemesis))
             :generator       gen
             :checker         checker})))
 
