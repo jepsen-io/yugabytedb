@@ -142,7 +142,9 @@
 (def suggested-opts
   "A map of workload names to a collection of suggested options for that
   workload."
-  (let [ru+ {:isolation [:read-uncommitted
+  (let [; While Read Uncommitted is present in YB, it maps to Read Committed,
+        ; so we don't bother testing it separately.
+        ru+ {:isolation [:read-uncommitted
                          :read-committed
                          :repeatable-read
                          :serializable]}
@@ -152,26 +154,29 @@
     ; I'm writing (combos ...) explicitly here because it's conceivable we're
     ; going to add some options that you *don't* want to take the cartesian
     ; product of, for specific workloads
-    {:jsql/append          (combos ru+)
+    {:jsql/append          (combos rc+)
      :jsql/internal        (combos si+)
      :jsql/internal-sim    (combos si+)
-     :jsql/rw              (combos ru+)
-     :ysql/append          (combos ru+)
-     :ysql/append-table    (combos ru+)
+     :jsql/rw              (combos rc+)
+     :ysql/append          (combos
+                             (merge rc+
+                                    {:geo-partition [false true]
+                                     :locking [:optimistic :pessimistic]}))
+     :ysql/append-table    (combos rc+)
      :ysql/bank            (combos si+)
      :ysql/bank-improved   (combos si+)
      :ysql/bank-multitable (combos si+)
-     :ysql/counter         (combos ru+)
-     :ysql/default-value   (combos ru+)
+     :ysql/counter         (combos rc+)
+     :ysql/default-value   (combos rc+)
      :ysql/g2              (combos s)
      :ysql/long-fork       (combos si+)
-     :ysql/monotonic       (combos ru+)
+     :ysql/monotonic       (combos rc+)
      :ysql/multi-key-acid  (combos rc+)
      :ysql/set             (combos rc+)
      :ysql/set-index       (combos rc+)
      :ysql/single-key-acid (combos rc+)
      :ysql/types           (combos s)
-     :ysql/rw              (combos ru+)}))
+     :ysql/rw              (combos rc+)}))
 
 (def nemesis-specs
   "These are the types of failures that the nemesis can perform."
@@ -243,8 +248,9 @@
           (case (:isolation opts)
             ; The existing tests add realtime edges to the graph, so we'll
             ; expect the strong variants of each isolation level. "repeatable
-            ; read" in YB is actually, IIRC, Strong SI.
-            :read-uncommitted :strong-read-uncommitted
+            ; read" in YB is actually, IIRC, Strong SI. The docs don't claim
+            ; this, but it does seem to pass!
+            :read-uncommitted :strong-read-committed
             :read-committed   :strong-read-committed
             :repeatable-read  :strong-snapshot-isolation
             :serializable     :strong-serializable))
