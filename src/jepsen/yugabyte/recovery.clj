@@ -6,7 +6,8 @@
   (:require [clojure.tools.logging :refer [info]]
             [jepsen.yugabyte.ysql.client :as c]
             [jepsen [generator :as gen]
-                    [nemesis :as n]]))
+                    [nemesis :as n]])
+  (:import (java.util.concurrent ExecutionException)))
 
 (defrecord HealthCheck [nemesis]
   n/Nemesis
@@ -16,18 +17,22 @@
   (invoke! [this test op]
     (if (identical? :health-check (:f op))
       (c/with-errors op
-        (->> (:nodes test)
-             (mapv (fn [node]
-                     (future
-                       (let [c (c/open test node)]
-                         (try
-                           (c/execute! c ["SELECT TRUE"])
-                           :alive
-                           (finally
-                             (c/close-conn! c)))))))
-             (mapv deref)
-             (zipmap (:nodes test))
-             (assoc op :value)))
+        (try
+          (->> (:nodes test)
+               (mapv (fn [node]
+                       (future
+                         (let [c (c/open test node)]
+                           (try
+                             (c/execute! c ["SELECT TRUE"])
+                             :alive
+                             (finally
+                               (c/close-conn! c)))))))
+               (mapv deref)
+               (zipmap (:nodes test))
+               (assoc op :value))
+          (catch ExecutionException e
+            ; I don't really care which; any will do
+            (throw (.getCause e)))))
       ; Pass to the regular nemesis
       (n/invoke! nemesis test op)))
 
