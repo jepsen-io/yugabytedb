@@ -212,7 +212,7 @@
          :msg m
          :definite? true}
 
-        #"Could not serialize access due to concurrent update"
+        #"(?i)could not serialize access due to concurrent update"
         {:type :concurrent-update
          :definite? true}
 
