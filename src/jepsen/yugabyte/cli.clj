@@ -132,7 +132,7 @@
       :default nil]
 
      [nil "--version VERSION" "What version of Yugabyte to install"
-      :default "2026.1.0.0-b118"]
+      :default "2026.1.1.1-b2"]
 
      [nil "--yugabyte-ssh" "Override SSH options with hardcoded defaults for Yugabyte's internal testing environment"
       :default false]
