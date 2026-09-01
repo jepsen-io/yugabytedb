@@ -18,7 +18,7 @@
     (if (identical? :health-check (:f op))
       (c/with-errors op
         (try
-          (->> (:nodes test)
+          (->> (:tserver (:roles test))
                (mapv (fn [node]
                        (future
                          (let [c (c/open test node)]
