@@ -83,9 +83,9 @@
 (defn api-flags
   "API-specific options for master"
   [api node]
-  (if (= api :ysql)
-    [:--use_initial_sys_catalog_snapshot]
-    []))
+  (case api
+    :ysql []
+    :ycql []))
 
 (defn table-lock-flags
   "Object locking is coordinated through the master, so the table-lock flag and
