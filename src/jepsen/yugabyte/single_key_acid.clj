@@ -29,7 +29,7 @@
 
 (defn workload
   [opts]
-  (let [n (count (:nodes opts))]
+  (let [n (count (:tserver (:roles opts)))]
     {:concurrency (* 8 n)
      :generator (independent/concurrent-generator
                   (* 2 n)

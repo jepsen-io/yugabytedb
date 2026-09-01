@@ -54,7 +54,7 @@
 
 (defn workload
   [opts]
-  (let [n (count (:nodes opts))]
+  (let [n (count (:tserver (:roles opts)))]
     {:concurrency (* 4 n)
      ; It's easy for this workload to blow out ram if we get big histories
      :rate 1000

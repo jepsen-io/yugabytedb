@@ -205,7 +205,7 @@
                      "PARTITION OF " table " (k, k2, geo_partition"
                      ", PRIMARY KEY (k, geo_partition)) FOR VALUES IN ('"
                      postfix "') "
-                     "TABLESPACE " db/tablespace-name "_" postfix)]))
+                     "TABLESPACE " c/tablespace-name "_" postfix)]))
 
 (defn resolve-locking
   "Resolves locking mode for a transaction. :mixed randomly picks :optimistic

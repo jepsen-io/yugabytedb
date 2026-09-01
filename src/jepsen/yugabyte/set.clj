@@ -17,7 +17,7 @@
 
 (defn workload
   [opts]
-  (let [c (* 2 (count (:nodes opts)))]
+  (let [c (* 2 (count (:tserver (:roles opts))))]
     {; Ideally four groups, to run our four timescales at once
      :concurrency (* 4 c)
      :generator

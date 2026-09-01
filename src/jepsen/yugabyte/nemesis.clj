@@ -1,90 +1,100 @@
 (ns jepsen.yugabyte.nemesis
+  "Fault injection"
   (:require [clojure [pprint :refer [pprint]]]
             [clojure.tools.logging :refer :all]
-            [jepsen.control :as c]
-            [jepsen.control.util :as cu]
-            [jepsen.generator :as gen]
-            [jepsen.nemesis :as nemesis]
-            [jepsen.util :as util :refer [meh timeout]]
-            [jepsen.nemesis [combined :as nc]]
-            [jepsen.yugabyte.db :as db]
-            [jepsen.yugabyte.ysql.client :as ysql.client]))
+            [jepsen [generator :as gen]
+                    [nemesis :as n]
+                    [random :as rand]
+                    [role :as role]
+                    [util :as util]]
+            [jepsen.nemesis [combined :as nc]]))
 
-(defrecord MasterNemesis []
-  nemesis/Nemesis
-  (setup! [this test] this)
+(defn package-gen-helper
+  "Helper for package-gen. Takes a collection of packages and draws a random
+  nonempty subset of them."
+  [packages]
+  (when (seq packages)
+    (let [pkgs (->> packages
+                    ; And pick a random subset of those
+                    util/random-nonempty-subset
+                    vec)]
+      ; If we drew nothing, try again.
+      (if (seq pkgs)
+        pkgs
+        (do ; (info "no draw, retrying")
+            (recur packages))))))
 
-  (invoke! [this test op]
-    (let [db    (:db test)
-          nodes (nc/db-nodes (assoc test :nodes (db/master-nodes test))
-                             db
-                             (:value op))
-          res   (c/with-nodes test nodes
-                  (case (:f op)
-                    :start  (db/start-master! db test c/*host*)
-                    :kill   (db/kill-master!  db)
-                    :pause  (cu/grepkill! :STOP "yb-master")
-                    :resume (cu/grepkill! :CONT "yb-master")))]
-      (assoc op :value res)))
+(defn package-gen
+  "For long-running tests, it's nice to be able to have periods of no faults,
+  periods with lots of faults, just one kind of fault, etc. This takes a time
+  period in seconds, which is how long to emit nemesis operations for a
+  particular subset of packages. Takes a collection of packages. Constructs a
+  nemesis generator which emits faults for a shifting collection of packages
+  over time."
+  [period packages]
+  ; We want a sequence of random subsets of packages
+  (repeatedly
+    (fn rand-pkgs []
+      (let [; Pick packages
+            pkgs (if (rand/bool 1/4)
+                   ; Roughly 1/4 of the time, pick no pkgs
+                   []
+                   (package-gen-helper packages))
+            ; Construct combined generators
+            gen       (if (seq pkgs)
+                        (apply gen/any (map :generator pkgs))
+                        (gen/sleep period))
+            final-gen (keep :final-generator pkgs)]
+        ; Ops from the combined generator, followed by a final gen
+        [(gen/log (str "Shifting to new mix of nemeses: "
+                       (pr-str (map (comp n/fs :nemesis) pkgs))))
+         (gen/time-limit period gen)
+         final-gen]))))
 
-  (teardown! [this test])
+(defn role-faults
+  "Takes a set of faults like #{:pause-master} and a role name like :master.
+  Returns a set of faults for that specific role, like #{:pause}.
 
-  nemesis/Reflection
-  (fs [this]
-    #{:kill :start :pause :resume}))
+  General faults, like :pause or :kill, apply to every role."
+  [faults role]
+  (->> faults
+       (keep (fn [fault]
+               (if-let [[m fault role']
+                        (re-find #"^(\w+)-(master|tserver)$"
+                                 (name fault))]
+                 ; This is a role-specific fault
+                 (when (= (name role) role')
+                   (keyword fault))
+                 ; A general fault always applies
+                 fault)))
+       set))
 
-(defrecord TServerNemesis []
-  nemesis/Nemesis
-  (setup! [this test] this)
-
-  (invoke! [this test op]
-    (let [db (:db test)
-          nodes (nc/db-nodes test db (:value op))
-          res (c/with-nodes test nodes
-                (case (:f op)
-                  ; Sort of a hack, but... YB masters seem to crash for
-                  ; mysterious reasons when we kill tservers. There's nothing
-                  ; in the logs and I'm running out of time here, so I'm just
-                  ; going to have them restart when the tservers do. This is
-                  ; going to make the nemesis plots look wrong, and probably
-                  ; confuse someone debugging this later, but I have *got* to
-                  ; keep the cluster running somehow or I'm never going to get
-                  ; results. :-/
-                  :start (do (db/start-master! db test c/*host*)
-                             (db/start-tserver! db test c/*host*))
-                  :kill  (db/kill-tserver!  db)
-                  :pause (cu/grepkill! :STOP "yb-tserver")
-                  :resume (cu/grepkill! :CONT "yb-tserver")))]
-      (assoc op :value res)))
-
-  (teardown! [this test])
-
-  nemesis/Reflection
-  (fs [this]
-    #{:kill :start :pause :resume}))
-
-(defn role-package
-  "Given a role like \"master\" and CLI opts, constructs a combined nemesis
-  package for :kill-master, :resume-master, etc."
+(defn update-role-faults
+  "Takes CLI options and updates :faults to be specific to the given role."
   [role opts]
-  (let [faults (:faults opts)
-        faults (cond-> faults
-                 (faults (keyword (str "kill-" role)))  (conj :kill)
-                 (faults (keyword (str "pause-" role))) (conj :pause))
-        pkg (nc/db-package (assoc opts :faults faults))
-        pkg (assoc pkg :nemesis (case role
-                                  "master"   (MasterNemesis.)
-                                  "tserver" (TServerNemesis.)))]
-    (nc/f-map #(keyword (str (name %) "-" role)) pkg)))
+  (update opts :faults role-faults role))
+
 
 (defn package
-  "Takes CLI opts and constructs a nemesis and generator for the test."
+  "Takes CLI opts. Constructs a nemesis and generator for the test."
   [opts]
   (let [opts (update opts :faults set)
-        packages (concat
-                   ; Standard packages
-                   (nc/nemesis-packages opts)
-                   ; Custom packages
-                   [(role-package "master" opts)
-                    (role-package "tserver" opts)])]
-    (nc/compose-packages packages)))
+        roles (:roles opts)
+        _ (assert (map? roles))
+        packages
+        (->> (concat
+               ; Unfurl each role into a collection of nemesis packages for
+               ; that particular role.
+               (mapcat (fn [[role nodes]]
+                         (->> opts
+                              (update-role-faults role)
+                              nc/nemesis-packages
+                              (map (partial role/restrict-nemesis-package role))))
+                       roles)
+               ; Custom packages
+               [])
+             (filter :generator))
+        nsp (:stable-period opts)]
+    ;(info :packages (map (comp n/fs :nemesis) packages))
+    (cond-> (nc/compose-packages packages)
+      nsp (assoc :generator (package-gen nsp packages)))))

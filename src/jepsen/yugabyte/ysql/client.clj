@@ -20,6 +20,11 @@
 
 (def default-timeout "Default timeout for operations in ms" 30000)
 
+(def tablespace-name
+  "The tablespace we create. I think this only gets used for geo-partitioned
+  tables? See db.core for more."
+  "geo_tablespace")
+
 (def dbname
   "The default DB name"
   "jepsen")

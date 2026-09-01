@@ -6,6 +6,7 @@
             [jepsen [checker   :as checker]
                     [generator :as gen]
                     [random    :as random]
+                    [role      :as role]
                     [sql       :as sql]
                     [tests     :as tests]
                     [util      :refer [map-vals]]]
@@ -50,8 +51,7 @@
                                   [set             :as ysql.set]
                                   [single-key-acid :as ysql.single-key-acid]
                                   [types           :as ysql.types]
-                                  [rw              :as ysql.rw]
-             ])
+                                  [rw              :as ysql.rw]])
   (:import (jepsen.client Client)))
 
 (def version-regex #"(?<=yugabyte\-)(\d+\.\d+(\.\d+){0,2}(-b\d+)?)")
@@ -181,13 +181,20 @@
 (def nemesis-specs
   "These are the types of failures that the nemesis can perform."
   #{:partition
+    :partition-master
+    :partition-tserver
     :kill
     :kill-master
     :kill-tserver
     :pause
     :pause-master
     :pause-tserver
-    :clock})
+    :clock
+    :clock-master
+    :clock-tserver
+    :packet
+    :packet-master
+    :packet-tserver})
 
 (def all-nemeses
   "All nemesis specs to run as a part of a complete test suite."
@@ -202,8 +209,9 @@
      :kill-master
      :pause-tserver
      :pause-master
-     :clock-skew
-     :partition}])
+     :clock
+     :partition
+     :packet}])
 
 (defn yugabyte-ssh-defaults
   "A partial test map with SSH options for a test running in Yugabyte's
@@ -223,6 +231,21 @@
                          ;"com.datastax.driver.core.CodecRegistry"  :info
                          }}})
 
+(defn roles
+  "Computes a roles map for CLI options. The first replication-factor nodes are
+  masters; the remainder are tservers."
+  [opts]
+  (let [nodes (:nodes opts)
+        rf (:replication-factor opts)
+        _ (assert (< rf (count nodes))
+                  (str "We need at least " (* 2 rf)
+                       " nodes for " rf " masters and " rf
+                       " tservers, but test only has " (count nodes)
+                       " nodes: " (pr-str nodes)))
+        [masters tservers] (split-at rf nodes)]
+    {:master  (vec masters)
+     :tserver (vec tservers)}))
+
 (defn test-1
   "Initial test construction from a map of CLI options. Establishes the test
   name, OS, DB."
@@ -241,15 +264,16 @@
       :api api
       ; Connection manager only applies to YSQL.
       :connection-manager (and (not= :ycql api) (:connection-manager opts))
-      :db (db/->YugaByteDB)
+      :db (db/db)
 
       :expected-consistency-model
       (or (:expected-consistency-model opts)
           (case (:isolation opts)
             ; The existing tests add realtime edges to the graph, so we'll
-            ; expect the strong variants of each isolation level. "repeatable
-            ; read" in YB is actually, IIRC, Strong SI. The docs don't claim
-            ; this, but it does seem to pass!
+            ; expect the strong variants of each isolation level. YB
+            ; "Repeatable Read" is actually SI, and I suspect Strong SI. The
+            ; docs don't claim Strong variants directly, but we verified this
+            ; in previous Jepsen tests and it seems to pass here!
             :read-uncommitted :strong-read-committed
             :read-committed   :strong-read-committed
             :repeatable-read  :strong-snapshot-isolation
@@ -273,7 +297,10 @@
       :os (case (:os opts)
             :centos centos/os
             :debian debian/os)
-      :version (or url-version (:version opts)))))
+
+      :version (or url-version (:version opts))
+      :roles (roles opts)
+      )))
 
 (defn test-2
   "Second phase of test construction. Builds the workload and nemesis, and
@@ -282,11 +309,17 @@
   (let [workload ((get all-workloads (:workload opts)) opts)
         nemesis (nemesis/package
                   {:db       (:db opts)
+                   :roles    (:roles opts)
                    :nodes    (:nodes opts)
+                   :interval (:nemesis-interval opts)
+                   :stable-period (:nemesis-stable-period opts)
                    :faults   (:nemesis opts)
+                   :partition {:targets [:one :majority :majorities-ring]}
+                   :packet {:targets [:one :minority :all]
+                            :behaviors [{:delay {:time "100ms"
+                                                 :jitter "50ms"}}]}
                    :pause    {:targets [:one :minority :majority]}
-                   :kill     {:targets [:one :minority :majority :all]}
-                   :interval (:nemesis-interval opts)})
+                   :kill     {:targets [:one :minority :majority :all]}})
         gen (:generator workload)
         gen (if-let [r (:rate opts)]
               (gen/stagger (/ r) gen)
@@ -309,32 +342,7 @@
         gen (if-let [wrap (:wrap-generator workload)]
               (wrap gen)
               gen)
-        perf (checker/perf
-               {:nemeses #{{:name       "kill master"
-                            :start      #{:kill-master :stop-master}
-                            :stop       #{:start-master}
-                            :fill-color "#E9A4A0"}
-                           {:name       "kill tserver"
-                            :start      #{:kill-tserver :stop-tserver}
-                            :stop       #{:start-tserver}
-                            :fill-color "#E9C3A0"}
-                           {:name       "pause master"
-                            :start      #{:pause-master}
-                            :stop       #{:resume-master}
-                            :fill-color "#A0B1E9"}
-                           {:name       "pause tserver"
-                            :start      #{:pause-tserver}
-                            :stop       #{:resume-tserver}
-                            :fill-color "#B8A0E9"}
-                           {:name       "clock skew"
-                            :start      #{:bump-clock :strobe-clock}
-                            :stop       #{:reset-clock}
-                            :fill-color "#D2E9A0"}
-                           {:name       "partition"
-                            :start      #{:start-partition}
-                            :stop       #{:stop-partition}
-                            :fill-color "#888888"}}})
-        checker (checker/compose {:perf                 perf
+        checker (checker/compose {:perf                 (checker/perf)
                                   :stats                (checker/stats)
                                   :unhandled-exceptions (checker/unhandled-exceptions)
                                   :clock                (checker/clock-plot)
@@ -348,12 +356,15 @@
                    :checker)
            (when (:yugabyte-ssh opts) (yugabyte-ssh-defaults))
            (when (:trace-cql opts) (trace-logging))
-           {:client          (:client workload)
+           {:client          ; Only tservers run the client-facing API
+                             (role/restrict-client
+                               :tserver (:client workload))
             :concurrency     (or (:concurrency opts)
                                  (:concurrency workload)
-                                 (* 2 (count (:nodes opts))))
+                                 (* 2 (count (:tserver (:roles opts)))))
             :nemesis         (recovery/nemesis
                                (:nemesis nemesis))
+            :plot            {:nemeses (:perf nemesis)}
             :generator       gen
             :checker         checker})))
 

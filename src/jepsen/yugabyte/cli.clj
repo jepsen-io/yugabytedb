@@ -113,6 +113,11 @@
       :parse-fn #(Long/parseLong %)
       :validate [pos? "Must be a positive integer"]]
 
+     [nil "--nemesis-stable-period SECS" "If given, rotates the mixture of nemesis faults over time with roughly this period."
+      :default  30
+      :parse-fn parse-long
+      :validate [pos? "Must be a positive number."]]
+
      [nil "--stress-tuning" "Enable stress-test flags that use tiny thresholds for internal subsystems (batching, compaction, WAL, cache, splitting, etc.) to trigger edge cases more frequently"
       :default true]
 

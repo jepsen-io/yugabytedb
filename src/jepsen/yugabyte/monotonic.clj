@@ -27,7 +27,7 @@
 (defn workload
   [opts]
   (let [n (or (:concurrency opts)
-              (* 2 (count (:nodes opts))))]
+              (* 2 (count (:tserver (:roles opts)))))]
     {:concurrency n
      :generator (->> (gen/reserve (quot n 2)
                                   (repeat {:type :invoke, :f :inc})
