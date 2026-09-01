@@ -232,8 +232,8 @@
                          }}})
 
 (defn roles
-  "Computes a roles map for CLI options. The first replication-factor nodes are
-  masters; the remainder are tservers."
+  "Computes a roles map for CLI options. The last replication-factor nodes are
+  masters; the others are tservers."
   [opts]
   (let [nodes (:nodes opts)
         rf (:replication-factor opts)
@@ -242,9 +242,12 @@
                        " nodes for " rf " masters and " rf
                        " tservers, but test only has " (count nodes)
                        " nodes: " (pr-str nodes)))
-        [masters tservers] (split-at rf nodes)]
-    {:master  (vec masters)
-     :tserver (vec tservers)}))
+        ; Why reverse? This is a deeply silly hack: the jsql workloads assume
+        ; that the primary node of the test is the writable one. Ideally I'd go
+        ; make that pluggable, but I have no time. :(
+        [masters tservers] (split-at rf (reverse nodes))]
+    {:master  (vec (sort masters))
+     :tserver (vec (sort tservers))}))
 
 (defn test-1
   "Initial test construction from a map of CLI options. Establishes the test
@@ -282,7 +285,7 @@
       :name (str (-> (or (:url opts) (:version opts))
                      (str/split #"/")
                      (last))
-                 " " (name api)
+                 " " (namespace (:workload opts))
                  " " (name (:workload opts))
                  ; Isolation doesn't apply to ycql
                  (when (not= :ycql api)
