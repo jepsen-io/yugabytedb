@@ -229,11 +229,11 @@
   db/Pause
   (pause! [this test node]
     (c/su
-      (cu/kill-bin! :STOP bin)))
+      (cu/kill-bin! :STOP false bin)))
 
   (resume! [this test node]
     (c/su
-      (cu/kill-bin! :CONT bin)))
+      (cu/kill-bin! :CONT false bin)))
 
   db/Primary
   (setup-primary! [this test node])
