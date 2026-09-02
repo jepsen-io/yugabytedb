@@ -306,9 +306,8 @@
         ; Process wrapped exception, if any
         (error-fn e2)
 
-        (let [data (ex-data e)]
-          (case (:type data)
-            nil)))
+        ; Pass through other ex-info maps
+        (ex-data e))
 
       (condp re-find m
         #"^timeout$"
