@@ -20,6 +20,10 @@
   (let [c (* 2 (count (:tserver (:roles opts))))]
     {; Ideally four groups, to run our four timescales at once
      :concurrency (* 4 c)
+
+     ; Keep track of the largest independent key seen
+     :wrap-generator independent/track-keys
+
      :generator
      ; This is not great--uisng mod k here means that some of the time the
      ; generator gets stuck doing all slow gens and no fast ones. I'm on a
@@ -39,5 +43,13 @@
                  (with-out-str (binding [*print-length* 8]
                                  (pprint gen))))
            gen)))
+
+     ; One final read of every key at the end
+     :final-generator
+     (independent/final-generator
+       (fn [ks]
+         (map (fn [k] {:f :read, :value (independent/tuple k nil)})
+              ks)))
+
      :checker (independent/checker
                 (checker/set-full))}))
