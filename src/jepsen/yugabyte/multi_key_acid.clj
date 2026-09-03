@@ -57,7 +57,8 @@
   (let [n (count (:tserver (:roles opts)))]
     {:concurrency (* 4 n)
      ; It's easy for this workload to blow out ram if we get big histories
-     :rate 1000
+     :rate (max (:rate opts) 1000)
+     :wrap-generator independent/track-keys
      :generator (independent/concurrent-generator
                   (* 2 n)
                   (range)
@@ -65,6 +66,10 @@
                     (->> (gen/reserve n r w)
                          (gen/process-limit (* n 2))
                          (gen/limit 4096))))
+     :final-generator (independent/final-generator
+                        (constantly {:f :read
+                                     :value (mapv (fn [k] [:r k nil])
+                                                  key-range)}))
      :checker   (independent/checker
                   (checker/compose
                     {:timeline (timeline/html)

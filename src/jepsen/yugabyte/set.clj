@@ -46,10 +46,7 @@
 
      ; One final read of every key at the end
      :final-generator
-     (independent/final-generator
-       (fn [ks]
-         (map (fn [k] {:f :read, :value (independent/tuple k nil)})
-              ks)))
+     (independent/final-generator (constantly {:f :read}))
 
      :checker (independent/checker
                 (checker/set-full))}))

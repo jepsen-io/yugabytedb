@@ -31,6 +31,7 @@
   [opts]
   (let [n (count (:tserver (:roles opts)))]
     {:concurrency (* 8 n)
+     :wrap-generator independent/track-keys
      :generator (independent/concurrent-generator
                   (* 2 n)
                   (range)
@@ -39,6 +40,8 @@
                                       (gen/mix [w cas cas]))
                          (gen/process-limit 10)
                          (gen/limit 8192))))
+     :final-generator (independent/final-generator
+                        (constantly {:f :read}))
      :checker   (independent/checker
                   (checker/compose
                     {:timeline (timeline/html)
