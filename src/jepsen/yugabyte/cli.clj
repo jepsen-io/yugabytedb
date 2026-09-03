@@ -126,6 +126,12 @@
 
      [nil "--table-locks" "If set, enables table-level locks: an experimental feature. See https://docs.yugabyte.com/stable/explore/transactions/explicit-locking/#table-level-locks for details."]
 
+     [nil "--time-limit SECONDS"
+      "Excluding setup and teardown, how long should a test run for, in seconds?"
+      :default  300
+      :parse-fn parse-long
+      :validate [pos? "Must be positive"]]
+
      [nil "--trace-cql" "If provided, logs CQL queries"
       :default false]
 
