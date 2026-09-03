@@ -433,22 +433,21 @@
 (defn setup-db!
   "Creates the YugaByte database and sets up geo-partitioning if necessary."
   [test node]
-  (when (= (:api test) :ysql)
-    (ysqlsh test node :-c (str "DROP DATABASE IF EXISTS "
-                               ysql.client/dbname ";"))
-    (ysqlsh test node :-c (str "DROP USER IF EXISTS " ysql.client/user "; "
-                               "CREATE USER " ysql.client/user " createdb; "))
-    (ysqlsh test node :-U ysql.client/user
-            :-c (str "CREATE DATABASE " ysql.client/dbname
-                     (when (:yb-colocated test)
-                       " WITH colocated = true")
-                     ";"))
-    (when (:geo-partition test)
-      (info "Setup optional geo partitioning")
-      (setup-geo-partition! node ysql.client/tablespace-name)
-      (ysqlsh test node :-c (str "GRANT CREATE ON TABLESPACE "
-                                 ysql.client/tablespace-name
-                                 "_1a TO " ysql.client/user ";"))
-      (ysqlsh test node :-c (str "GRANT CREATE ON TABLESPACE "
-                                 ysql.client/tablespace-name
-                                 "_2a TO " ysql.client/user ";")))))
+  (ysqlsh test node :-c (str "DROP DATABASE IF EXISTS "
+                             ysql.client/dbname ";"))
+  (ysqlsh test node :-c (str "DROP USER IF EXISTS " ysql.client/user "; "
+                             "CREATE USER " ysql.client/user " createdb; "))
+  (ysqlsh test node :-U ysql.client/user
+          :-c (str "CREATE DATABASE " ysql.client/dbname
+                   (when (:yb-colocated test)
+                     " WITH colocated = true")
+                   ";"))
+  (when (:geo-partition test)
+    (info "Setup optional geo partitioning")
+    (setup-geo-partition! node ysql.client/tablespace-name)
+    (ysqlsh test node :-c (str "GRANT CREATE ON TABLESPACE "
+                               ysql.client/tablespace-name
+                               "_1a TO " ysql.client/user ";"))
+    (ysqlsh test node :-c (str "GRANT CREATE ON TABLESPACE "
+                               ysql.client/tablespace-name
+                               "_2a TO " ysql.client/user ";"))))
