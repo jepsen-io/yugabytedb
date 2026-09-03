@@ -105,8 +105,8 @@
     [:append          append/workload          ysql.append/->Client
      :append-table    append/workload          ysql.append-table/->Client
      :bank            bank/workload-allow-neg  (partial ysql.bank/->Client true)
+     :bank-multitable bank/workload-allow-neg  (partial ysql.bank/->MultiClient true)
      :bank-improved   bank-improved/workload   ysql.bank-improved/->Client
-     :bank-multitable bank/workload-allow-neg  (partial ysql.bank/->Client true)
      :counter         counter/workload         ysql.counter/->Client
      :default-value   default-value/workload   ysql.default-value/->Client
      :g2              g2/workload              ysql.g2/->Client

@@ -77,7 +77,6 @@
   c/YSQLYbClient
 
   (setup-cluster! [this test c]
-
     (doseq [a (:accounts test)]
       (let [acc-table-name (str table-name a)
             acc-index-name (str index-name a)
@@ -107,8 +106,8 @@
                (mapv (fn [a]
                        (let [tbl (str table-name a)
                              idx (str index-name a)
-                             use-index? (zero? (random/long 2))]
-                         (info tbl (if use-index? "IndexOnlyScan" "SeqScan"))
+                             use-index? (random/bool)]
+                         ;(info tbl (if use-index? "IndexOnlyScan" "SeqScan"))
                          (if use-index?
                            (-> (c/execute! op c [(str "/*+ IndexOnlyScan(" tbl " " idx ") */ SELECT balance FROM " tbl " WHERE id = " a)])
                                first :balance)
@@ -127,8 +126,8 @@
             (if allowed?
               (do (c/update! op c (str table-name from) {:balance b-from-after} ["id = ?" from])
                   (c/update! op c (str table-name to) {:balance b-to-after} ["id = ?" to])
-                  (assoc op :type :ok)
-                  (assoc op :type :fail, :error [:negative from b-from-after]))))))))
+                  (assoc op :type :ok))
+              (assoc op :type :fail, :error [:negative from b-from-after])))))))
 
   (teardown-cluster! [this test c]
     (doseq [a (:accounts test)]
