@@ -17,7 +17,6 @@
                              [bank-improved   :as bank-improved]
                              [counter         :as counter]
                              [db              :as db]
-                             [default-value   :as default-value]
                              [g2              :as g2]
                              [jsql            :as jsql]
                              [long-fork       :as long-fork]
@@ -43,7 +42,6 @@
                                   [bank-improved   :as ysql.bank-improved]
                                   [client          :as ysql.client]
                                   [counter         :as ysql.counter]
-                                  [default-value   :as ysql.default-value]
                                   [g2              :as ysql.g2]
                                   [long-fork       :as ysql.long-fork]
                                   [monotonic       :as ysql.monotonic]
@@ -108,7 +106,6 @@
      :bank-multitable bank/workload-allow-neg  (partial ysql.bank/->MultiClient true)
      :bank-improved   bank-improved/workload   ysql.bank-improved/->Client
      :counter         counter/workload         ysql.counter/->Client
-     :default-value   default-value/workload   ysql.default-value/->Client
      :g2              g2/workload              ysql.g2/->Client
      :long-fork       long-fork/workload       ysql.long-fork/->Client
      :monotonic       monotonic/workload       ysql.monotonic/->Client
@@ -155,6 +152,8 @@
     ; going to add some options that you *don't* want to take the cartesian
     ; product of, for specific workloads
     {:jsql/append          (combos rc+)
+     :jsql/default-value   (combos (merge rc+
+                                          {:locking-table [false true]}))
      :jsql/internal        (combos si+)
      :jsql/internal-sim    (combos si+)
      :jsql/rw              (combos rc+)
@@ -162,12 +161,12 @@
                              (merge rc+
                                     {:geo-partition [false true]
                                      :locking [:optimistic :pessimistic]}))
-     :ysql/append-table    (combos rc+)
+     :ysql/append-table    (combos (merge rc+
+                                          {:locking-table [false true]}))
      :ysql/bank            (combos si+)
      :ysql/bank-improved   (combos si+)
      :ysql/bank-multitable (combos si+)
      :ysql/counter         (combos rc+)
-     :ysql/default-value   (combos rc+)
      :ysql/g2              (combos s)
      :ysql/long-fork       (combos si+)
      :ysql/monotonic       (combos rc+)
@@ -291,6 +290,7 @@
                  (when (not= :ycql api)
                    (str " " (name (:isolation opts))))
                  (when (:geo-partition opts) " geo")
+                 (when (:table-locks opts) " table-locks")
                  (when (seq (:nemesis opts))
                    (str " nemesis "
                         (->> (:nemesis opts)
