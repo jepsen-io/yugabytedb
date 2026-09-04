@@ -283,8 +283,12 @@
         {:type :data-sending-failed
          :msg m}
 
-        ;; Errors in test spec, do not suppress throwing
+        #"schema version mismatch"
+        {:type :schema-version-mismatch
+         :definite? true}
 
+        ; This suggests something very wrong in the test; we'll flag it as
+        ; critical so the JSQL checker can pick up on it.
         #"(?i)Syntax error"
         {:type      :syntax-error
          :msg       m
@@ -446,14 +450,14 @@
     (defrecord YSQLMyYbClient [arg1 arg2 arg3]
       c/YSQLYbClient
 
-      (setup-cluster! [this test c conn]
+      (setup-cluster! [this test conn]
         (do-stuff-once-with c))
 
-      (invoke-op! [this test op c conn]
+      (invoke-op! [this test op conn]
         (case (:f op)
           ...))
 
-      (teardown-cluster! [this test c conn]
+      (teardown-cluster! [this test conn]
         (c/drop-table c \"my-table\"))
 
 
