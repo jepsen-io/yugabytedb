@@ -127,6 +127,10 @@
      [nil "--stress-tuning" "Enable stress-test flags that use tiny thresholds for internal subsystems (batching, compaction, WAL, cache, splitting, etc.) to trigger edge cases more frequently"
       :default true]
 
+     [nil "--one-long-fault SECONDS" "If set, performs a single nemesis operation, waits SECONDS, then allows more operations. This is helpful when you'd like to understand how, say, the failure of a master node impacts availability of tservers, and how long it takes to recover, assuming no further faults."
+      :parse-fn parse-long
+      :validate [pos? "Must be a positive integer"]]
+
      [nil "--table-count INT" "Number of tables to spread rows across."
       :default 5]
 

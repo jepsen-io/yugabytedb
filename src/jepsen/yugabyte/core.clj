@@ -360,6 +360,12 @@
                    (gen/phases
                      ; Give ourselves a little bit before killing processes
                      (gen/sleep 5)
+                     (when-let [n (:one-long-fault opts)]
+                       ; Ugh, this will double the first fault
+                       [(gen/limit 1 (:generator nemesis))
+                        (gen/log (str "Waiting " n " seconds for this long fault"))
+                        (gen/sleep n)
+                        (gen/log "One long fault finished")])
                      (:generator nemesis)))
                  (gen/time-limit (:time-limit opts)))
         gen (if-let [final (:final-generator workload)]
