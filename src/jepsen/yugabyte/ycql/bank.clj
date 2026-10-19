@@ -54,13 +54,11 @@
 
                  " UPDATE " table-name
                  " SET balance = balance - " amount " WHERE id = " from
-                 ;" IF EXISTS ELSE ERROR;"
-                 ";"
+                 " IF EXISTS ELSE ERROR;"
 
                  " UPDATE " table-name
                  " SET balance = balance + " amount " WHERE id = " to
-                 ;" IF EXISTS ELSE ERROR;"
-                 ";"
+                 " IF EXISTS ELSE ERROR;"
 
                  " END TRANSACTION;"))
           (assoc op :type :ok))
@@ -77,10 +75,13 @@
                  ; expressions in their INSERTs, UPDATEs, or DELETEs. So... why
                  ; does this not throw? Yugabyte wrote this code, so they must
                  ; know...
-                 " (id, balance) VALUES (" to "," amount ") IF NOT EXISTS ELSE ERROR;"
+                 " (id, balance) VALUES (" to "," amount
+                 ") IF NOT EXISTS ELSE ERROR;"
 
                  "UPDATE " table-name
-                 " SET balance = balance - " amount " WHERE id = " from ";"
+                 " SET balance = balance - " amount " WHERE id = " from
+                 " IF EXISTS ELSE ERROR;"
+
                  "END TRANSACTION;"))
           (assoc op :type :ok)))))
 
